@@ -1,0 +1,31 @@
+# Configuration (contains secrets)
+config.php
+
+# Documentation 
+docs/
+
+# IDE
+.vscode/
+
+# Logs
+*.log
+logs/
+error_log
+php_errors.log
+access.log
+
+# Database backups and dumps
+backups/
+database_backups/
+
+# PHP
+vendor/
+composer.lock
+composer.phar
+
+# Deployment packages and archives
+*.zip
+*.rar
+
+# Test files with sensitive data
+test_*.php
