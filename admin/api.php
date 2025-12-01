@@ -10,6 +10,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/includes/init.php';
 require_once dirname(__DIR__) . '/includes/auth.php';
 require_once dirname(__DIR__) . '/includes/functions.php';
+require_once dirname(__DIR__) . '/includes/image.php';
 
 // Set JSON content type
 header('Content-Type: application/json');
@@ -101,6 +102,17 @@ try {
             }
 
             $id = createFurniture($validation['data']);
+            
+            // Process image if URL provided - download, resize, convert to WebP
+            $imageUrl = $validation['data']['image_url'] ?? null;
+            if ($imageUrl && filter_var($imageUrl, FILTER_VALIDATE_URL)) {
+                $localPath = processImageFromUrl($imageUrl, $id);
+                if ($localPath) {
+                    // Update with local processed image path
+                    updateFurnitureImage($id, $localPath);
+                }
+            }
+            
             jsonSuccess(['id' => $id], 'Furniture created successfully');
             break;
 
@@ -119,6 +131,24 @@ try {
 
             if (!$validation['valid']) {
                 jsonError(implode(', ', $validation['errors']));
+            }
+
+            // Get current item to check if image changed
+            $currentItem = getFurnitureById($id);
+            $newImageUrl = $validation['data']['image_url'] ?? null;
+            $oldImageUrl = $currentItem['image_url'] ?? null;
+            
+            // Process new image if URL changed and is external
+            if ($newImageUrl && $newImageUrl !== $oldImageUrl && filter_var($newImageUrl, FILTER_VALIDATE_URL)) {
+                $localPath = processImageFromUrl($newImageUrl, $id);
+                if ($localPath) {
+                    // Delete old local image if exists
+                    if ($oldImageUrl && str_starts_with($oldImageUrl, '/images/furniture/')) {
+                        deleteImageFile($oldImageUrl);
+                    }
+                    // Use local processed image
+                    $validation['data']['image_url'] = $localPath;
+                }
             }
 
             if (!updateFurniture($id, $validation['data'])) {
@@ -399,16 +429,33 @@ try {
             }
 
             $imported = 0;
+            $imagesProcessed = 0;
+            
             foreach ($result['items'] as $item) {
                 try {
-                    createFurniture($item);
+                    $furnitureId = createFurniture($item);
                     $imported++;
+                    
+                    // Process image if URL provided
+                    $imageUrl = $item['image_url'] ?? null;
+                    if ($imageUrl && filter_var($imageUrl, FILTER_VALIDATE_URL)) {
+                        $localPath = processImageFromUrl($imageUrl, $furnitureId);
+                        if ($localPath) {
+                            updateFurnitureImage($furnitureId, $localPath);
+                            $imagesProcessed++;
+                        }
+                    }
                 } catch (Exception $e) {
                     error_log("Import error: " . $e->getMessage());
                 }
             }
 
-            jsonSuccess(['imported' => $imported], "Successfully imported {$imported} items");
+            $message = "Successfully imported {$imported} items";
+            if ($imagesProcessed > 0) {
+                $message .= " ({$imagesProcessed} images processed)";
+            }
+            
+            jsonSuccess(['imported' => $imported, 'images_processed' => $imagesProcessed], $message);
             break;
 
         case 'export':
