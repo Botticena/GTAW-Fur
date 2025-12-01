@@ -4,11 +4,39 @@
 
 const Admin = {
     /**
+     * CSRF token for API requests
+     */
+    csrfToken: null,
+
+    /**
+     * Selected items for batch operations
+     */
+    selectedItems: new Set(),
+
+    /**
      * Initialize admin panel
      */
     init() {
+        this.csrfToken = this.getCsrfToken();
         this.bindEvents();
         this.initForms();
+        this.initBatchOperations();
+        this.initDragAndDrop();
+    },
+
+    /**
+     * Get CSRF token from hidden input or meta tag
+     */
+    getCsrfToken() {
+        // Try hidden input first
+        const input = document.querySelector('input[name="csrf_token"]');
+        if (input) return input.value;
+        
+        // Try meta tag
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta) return meta.content;
+        
+        return null;
     },
 
     /**
@@ -54,6 +82,202 @@ const Admin = {
     },
 
     /**
+     * Initialize batch operations
+     */
+    initBatchOperations() {
+        const selectAll = document.getElementById('select-all');
+        const batchControls = document.getElementById('batch-controls');
+        
+        if (!selectAll || !batchControls) return;
+
+        // Select all checkbox
+        selectAll.addEventListener('change', (e) => {
+            const checkboxes = document.querySelectorAll('.row-select');
+            checkboxes.forEach(cb => {
+                cb.checked = e.target.checked;
+                if (e.target.checked) {
+                    this.selectedItems.add(cb.dataset.id);
+                } else {
+                    this.selectedItems.delete(cb.dataset.id);
+                }
+            });
+            this.updateBatchControls();
+        });
+
+        // Individual row checkboxes
+        document.querySelectorAll('.row-select').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    this.selectedItems.add(e.target.dataset.id);
+                } else {
+                    this.selectedItems.delete(e.target.dataset.id);
+                }
+                this.updateBatchControls();
+            });
+        });
+    },
+
+    /**
+     * Update batch controls visibility and count
+     */
+    updateBatchControls() {
+        const controls = document.getElementById('batch-controls');
+        const countEl = document.getElementById('selected-count');
+        
+        if (!controls) return;
+        
+        if (this.selectedItems.size > 0) {
+            controls.classList.add('visible');
+            if (countEl) {
+                countEl.innerHTML = `<strong>${this.selectedItems.size}</strong> item${this.selectedItems.size > 1 ? 's' : ''} selected`;
+            }
+        } else {
+            controls.classList.remove('visible');
+        }
+    },
+
+    /**
+     * Delete selected items
+     */
+    async batchDelete(type) {
+        if (this.selectedItems.size === 0) return;
+        
+        const count = this.selectedItems.size;
+        if (!confirm(`Are you sure you want to delete ${count} item${count > 1 ? 's' : ''}?`)) {
+            return;
+        }
+
+        try {
+            const ids = Array.from(this.selectedItems);
+            const result = await this.api(`${type}/batch-delete`, {
+                method: 'POST',
+                body: { ids }
+            });
+
+            if (result.success) {
+                this.toast(`${count} item${count > 1 ? 's' : ''} deleted`, 'success');
+                // Remove rows
+                ids.forEach(id => {
+                    document.querySelector(`tr[data-id="${id}"]`)?.remove();
+                });
+                this.selectedItems.clear();
+                this.updateBatchControls();
+            } else {
+                this.toast(result.error || 'Failed to delete items', 'error');
+            }
+        } catch (error) {
+            this.toast('Network error. Please try again.', 'error');
+        }
+    },
+
+    /**
+     * Initialize drag and drop for sortable tables
+     */
+    initDragAndDrop() {
+        const sortableTables = document.querySelectorAll('[data-sortable]');
+        
+        sortableTables.forEach(table => {
+            const tbody = table.querySelector('tbody');
+            if (!tbody) return;
+
+            const type = table.dataset.sortable;
+            let draggedRow = null;
+
+            tbody.querySelectorAll('tr').forEach(row => {
+                row.classList.add('sortable-row');
+                row.draggable = true;
+
+                row.addEventListener('dragstart', (e) => {
+                    draggedRow = row;
+                    row.classList.add('dragging');
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', row.dataset.id);
+                });
+
+                row.addEventListener('dragend', () => {
+                    row.classList.remove('dragging');
+                    tbody.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'));
+                });
+
+                row.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (row !== draggedRow) {
+                        row.classList.add('drag-over');
+                    }
+                });
+
+                row.addEventListener('dragleave', () => {
+                    row.classList.remove('drag-over');
+                });
+
+                row.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    row.classList.remove('drag-over');
+                    
+                    if (draggedRow && row !== draggedRow) {
+                        const rect = row.getBoundingClientRect();
+                        const midY = rect.top + rect.height / 2;
+                        
+                        if (e.clientY < midY) {
+                            tbody.insertBefore(draggedRow, row);
+                        } else {
+                            tbody.insertBefore(draggedRow, row.nextSibling);
+                        }
+                        
+                        this.showOrderChanged(type);
+                    }
+                });
+            });
+        });
+    },
+
+    /**
+     * Show order changed indicator
+     */
+    showOrderChanged(type) {
+        const indicator = document.getElementById('order-changed');
+        if (indicator) {
+            indicator.classList.add('visible');
+            indicator.dataset.type = type;
+        }
+    },
+
+    /**
+     * Save the new order
+     */
+    async saveOrder() {
+        const indicator = document.getElementById('order-changed');
+        const type = indicator?.dataset.type;
+        if (!type) return;
+
+        const table = document.querySelector(`[data-sortable="${type}"]`);
+        if (!table) return;
+
+        const rows = table.querySelectorAll('tbody tr');
+        const order = Array.from(rows).map((row, index) => ({
+            id: parseInt(row.dataset.id),
+            order: index + 1
+        }));
+
+        try {
+            const result = await this.api(`${type}/reorder`, {
+                method: 'POST',
+                body: { order }
+            });
+
+            if (result.success) {
+                this.toast('Order saved successfully', 'success');
+                indicator.classList.remove('visible');
+            } else {
+                this.toast(result.error || 'Failed to save order', 'error');
+            }
+        } catch (error) {
+            this.toast('Network error. Please try again.', 'error');
+        }
+    },
+
+    /**
      * Handle AJAX form submission
      */
     async handleAjaxForm(e) {
@@ -89,9 +313,17 @@ const Admin = {
                     }
                 });
 
+                // Ensure CSRF token is included
+                if (this.csrfToken && !data.csrf_token) {
+                    data.csrf_token = this.csrfToken;
+                }
+
                 response = await fetch(action, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': this.csrfToken || ''
+                    },
                     body: JSON.stringify(data),
                     credentials: 'same-origin'
                 });
@@ -162,9 +394,25 @@ const Admin = {
             headers: {}
         };
 
+        // Add CSRF token for non-GET requests
+        if (options.method && options.method !== 'GET') {
+            if (this.csrfToken) {
+                fetchOptions.headers['X-CSRF-Token'] = this.csrfToken;
+            }
+        }
+
         if (options.body) {
             fetchOptions.headers['Content-Type'] = 'application/json';
-            fetchOptions.body = JSON.stringify(options.body);
+            // Include CSRF token in body as well
+            const bodyWithCsrf = { ...options.body };
+            if (this.csrfToken) {
+                bodyWithCsrf.csrf_token = this.csrfToken;
+            }
+            fetchOptions.body = JSON.stringify(bodyWithCsrf);
+        } else if (options.method && options.method !== 'GET' && this.csrfToken) {
+            // For requests without body, still send CSRF token
+            fetchOptions.headers['Content-Type'] = 'application/json';
+            fetchOptions.body = JSON.stringify({ csrf_token: this.csrfToken });
         }
 
         const response = await fetch(url, fetchOptions);
