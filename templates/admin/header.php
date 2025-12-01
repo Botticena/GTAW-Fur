@@ -21,6 +21,9 @@ $pageTitle = isset($pageTitle) ? "{$pageTitle} - Admin" : "Admin - {$appName}";
     
     <title><?= e($pageTitle) ?></title>
     
+    <!-- CSRF Token for AJAX -->
+    <meta name="csrf-token" content="<?= e(generateCsrfToken()) ?>">
+    
     <!-- Pico CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
     
