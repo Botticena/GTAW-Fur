@@ -15,7 +15,8 @@ const App = {
     state: {
         furniture: [],
         categories: [],
-        tags: [],
+        tags: [],        // flat list
+        tagGroups: [],   // grouped structure { groups: [...], ungrouped: [...] }
         favorites: new Set(),
         filters: {
             category: null,
@@ -40,9 +41,10 @@ const App = {
     },
 
     // Cache settings (TTL in milliseconds)
+    // Note: Cache keys are versioned to invalidate when structure changes
     cacheConfig: {
-        categories: { key: 'gtaw_categories', ttl: 5 * 60 * 1000 }, // 5 minutes
-        tags: { key: 'gtaw_tags', ttl: 5 * 60 * 1000 }
+        categories: { key: 'gtaw_categories_v2', ttl: 5 * 60 * 1000 }, // 5 minutes
+        tags: { key: 'gtaw_tags_grouped_v2', ttl: 5 * 60 * 1000 }     // Changed from flat to grouped
     },
 
     // DOM element cache
@@ -131,10 +133,11 @@ const App = {
             searchContainer: document.querySelector('.search-container'),
             categorySelect: document.getElementById('category-filter'),
             sortSelect: document.getElementById('sort-filter'),
-            tagFilters: document.getElementById('tag-filters'),
+            tagFiltersContainer: document.getElementById('tag-filters-container'),
+            activeTags: document.getElementById('active-tags'),
+            activeTagsList: document.getElementById('active-tags-list'),
+            clearFiltersBtn: document.getElementById('clear-filters'),
             pagination: document.getElementById('pagination'),
-            loginBtn: document.getElementById('login-btn'),
-            userInfo: document.getElementById('user-info'),
             loadingOverlay: document.getElementById('loading'),
             toastContainer: document.getElementById('toast-container'),
             themeToggle: document.getElementById('theme-toggle'),
@@ -203,24 +206,9 @@ const App = {
             this.updateUrl();
         });
 
-        // Tag filter clicks
-        this.elements.tagFilters?.addEventListener('click', (e) => {
-            const btn = e.target.closest('.tag-filter-btn');
-            if (!btn) return;
-            
-            const slug = btn.dataset.slug;
-            const index = this.state.filters.tags.indexOf(slug);
-            
-            if (index === -1) {
-                this.state.filters.tags.push(slug);
-            } else {
-                this.state.filters.tags.splice(index, 1);
-            }
-            
-            btn.classList.toggle('active');
-            this.state.pagination.page = 1;
-            this.loadFurniture();
-            this.updateUrl();
+        // Clear all filters button
+        this.elements.clearFiltersBtn?.addEventListener('click', () => {
+            this.clearAllFilters();
         });
 
         // Keyboard shortcuts
@@ -534,26 +522,47 @@ const App = {
 
     /**
      * Load tags for filter (with caching)
+     * Now loads grouped structure: { groups: [...], ungrouped: [...] }
      */
     async loadTags() {
         try {
             const { key, ttl } = this.cacheConfig.tags;
             
-            // Try cache first
+            // Try cache first (validate it's the new grouped format)
             const cached = this.getCached(key);
-            if (cached) {
-                this.state.tags = cached;
+            if (cached && (Array.isArray(cached.groups) || Array.isArray(cached.ungrouped))) {
+                this.state.tagGroups = cached;
+                this.state.tags = this.flattenTags(cached);
                 this.renderTagFilters();
                 return;
             }
             
             const { data } = await this.api('tags');
-            this.state.tags = data;
+            this.state.tagGroups = data;
+            this.state.tags = this.flattenTags(data);
             this.setCache(key, data, ttl);
             this.renderTagFilters();
         } catch (error) {
             console.error('Failed to load tags:', error);
         }
+    },
+
+    /**
+     * Flatten grouped tags into a simple array
+     */
+    flattenTags(groupedData) {
+        const tags = [];
+        if (groupedData.groups) {
+            groupedData.groups.forEach(group => {
+                if (group.tags) {
+                    tags.push(...group.tags);
+                }
+            });
+        }
+        if (groupedData.ungrouped) {
+            tags.push(...groupedData.ungrouped);
+        }
+        return tags;
     },
 
     /**
@@ -964,6 +973,7 @@ const App = {
         if (this.elements.sortSelect) this.elements.sortSelect.value = 'name-asc';
         
         this.renderTagFilters();
+        this.updateActiveTagsDisplay();
         this.loadFurniture();
         this.updateUrl();
     },
@@ -973,8 +983,31 @@ const App = {
      */
     renderCard(item) {
         const isFav = this.state.favorites.has(item.id);
-        const tags = (item.tags || []).slice(0, 3);
+        const allTags = item.tags || [];
         const imageUrl = item.image_url || '/images/placeholder.svg';
+
+        // Calculate how many tags fit based on character length
+        // Available width is ~180px, avg char ~7px + padding ~16px per tag
+        const maxChars = 28; // Approximate character budget for tags row
+        let charCount = 0;
+        let visibleTags = [];
+        
+        for (const tag of allTags) {
+            const tagChars = tag.name.length + 2; // +2 for padding estimate
+            if (charCount + tagChars <= maxChars || visibleTags.length === 0) {
+                visibleTags.push(tag);
+                charCount += tagChars;
+            } else {
+                break;
+            }
+        }
+
+        const extraCount = allTags.length - visibleTags.length;
+        const tagsHtml = visibleTags.map(tag => `
+            <span class="tag" style="--tag-color: ${tag.color}">
+                ${this.escapeHtml(tag.name)}
+            </span>
+        `).join('') + (extraCount > 0 ? `<span class="tag-more">+${extraCount}</span>` : '');
 
         return `
             <article class="furniture-card" data-id="${item.id}" tabindex="0">
@@ -993,13 +1026,7 @@ const App = {
                         <span class="separator">•</span>
                         <span class="price">$${this.formatNumber(item.price)}</span>
                     </p>
-                    <div class="tags">
-                        ${tags.map(tag => `
-                            <span class="tag" style="--tag-color: ${tag.color}">
-                                ${this.escapeHtml(tag.name)}
-                            </span>
-                        `).join('')}
-                    </div>
+                    <div class="tags">${tagsHtml}</div>
                     <div class="actions">
                         <button 
                             class="btn-copy" 
@@ -1045,32 +1072,284 @@ const App = {
     },
 
     /**
-     * Render tag filter buttons
+     * Render grouped tag filter UI as dropdowns
      */
     renderTagFilters() {
-        if (!this.elements.tagFilters) return;
+        const container = this.elements.tagFiltersContainer;
+        if (!container) return;
 
-        const buttons = this.state.tags.map(tag => {
-            const isActive = this.state.filters.tags.includes(tag.slug);
+        const groupedData = this.state.tagGroups;
+        if (!groupedData || (!groupedData.groups?.length && !groupedData.ungrouped?.length)) {
+            container.innerHTML = '';
+            return;
+        }
+
+        let html = '';
+
+        // Render each group as a dropdown
+        if (groupedData.groups) {
+            groupedData.groups.forEach(group => {
+                if (!group.tags || group.tags.length === 0) return;
+                html += this.renderTagGroupDropdown(group);
+            });
+        }
+
+        // Render ungrouped tags if any
+        if (groupedData.ungrouped && groupedData.ungrouped.length > 0) {
+            html += this.renderTagGroupDropdown({
+                slug: 'ungrouped',
+                name: 'Other',
+                color: '#6b7280',
+                tags: groupedData.ungrouped
+            });
+        }
+
+        container.innerHTML = html;
+        
+        // Bind dropdown events
+        this.bindTagDropdownEvents();
+
+        // Update active tags display and clear button
+        this.updateActiveTagsDisplay();
+    },
+
+    /**
+     * Render a single tag group dropdown
+     */
+    renderTagGroupDropdown(group) {
+        const selectedInGroup = group.tags.filter(t => 
+            this.state.filters.tags.includes(t.slug)
+        ).length;
+        
+        const tagCheckboxes = group.tags.map(tag => {
+            const isChecked = this.state.filters.tags.includes(tag.slug);
             return `
-                <button 
-                    class="tag-filter-btn ${isActive ? 'active' : ''}"
-                    data-slug="${tag.slug}"
-                    style="--tag-color: ${tag.color}"
-                    title="Filter by ${this.escapeHtml(tag.name)}"
-                >
-                    <span class="tag-dot"></span>
-                    ${this.escapeHtml(tag.name)}
-                </button>
+                <label class="tag-checkbox-item" style="--tag-color: ${tag.color}">
+                    <input type="checkbox" data-slug="${tag.slug}" ${isChecked ? 'checked' : ''}>
+                    <span class="tag-color-dot"></span>
+                    <span class="tag-name">${this.escapeHtml(tag.name)}</span>
+                </label>
             `;
+        }).join('');
+
+        return `
+            <div class="tag-group-dropdown" data-group="${group.slug}">
+                <div class="tag-group-trigger">
+                    <span class="group-color" style="background: ${group.color}"></span>
+                    <span class="group-name">${this.escapeHtml(group.name)}</span>
+                    ${selectedInGroup > 0 ? `<span class="group-count">${selectedInGroup}</span>` : ''}
+                    <span class="group-arrow">▼</span>
+                </div>
+                <div class="tag-group-panel">
+                    <div class="tag-group-panel-header">
+                        <span class="tag-group-panel-title">${this.escapeHtml(group.name)}</span>
+                        <button class="tag-group-panel-clear" data-group="${group.slug}">Clear</button>
+                    </div>
+                    <div class="tag-group-tags">
+                        ${tagCheckboxes}
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    /**
+     * Bind event handlers for tag dropdowns
+     */
+    bindTagDropdownEvents() {
+        const container = this.elements.tagFiltersContainer;
+        if (!container) return;
+
+        // Toggle dropdown on trigger click
+        container.querySelectorAll('.tag-group-trigger').forEach(trigger => {
+            trigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const dropdown = trigger.closest('.tag-group-dropdown');
+                const wasOpen = dropdown.classList.contains('open');
+                
+                // Close all other dropdowns
+                container.querySelectorAll('.tag-group-dropdown.open').forEach(d => {
+                    d.classList.remove('open');
+                });
+                
+                // Toggle this one
+                if (!wasOpen) {
+                    dropdown.classList.add('open');
+                }
+            });
         });
 
-        // Add clear button if any tags are selected
-        const clearBtn = this.state.filters.tags.length > 0 
-            ? `<button class="tag-filters-clear" onclick="App.clearTagFilters()">Clear all</button>` 
-            : '';
+        // Handle checkbox changes
+        container.querySelectorAll('.tag-checkbox-item input').forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                e.stopPropagation();
+                this.toggleTagFilter(checkbox.dataset.slug);
+            });
+        });
 
-        this.elements.tagFilters.innerHTML = buttons.join('') + clearBtn;
+        // Handle clear buttons
+        container.querySelectorAll('.tag-group-panel-clear').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.clearGroupTags(btn.dataset.group);
+            });
+        });
+
+        // Close dropdowns when clicking outside (only bind once)
+        if (!this._tagDropdownClickBound) {
+            this._tagDropdownClickBound = true;
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.tag-group-dropdown')) {
+                    document.querySelectorAll('.tag-group-dropdown.open').forEach(d => {
+                        d.classList.remove('open');
+                    });
+                }
+            });
+        }
+    },
+
+    /**
+     * Clear all tags in a specific group
+     */
+    clearGroupTags(groupSlug) {
+        const groupedData = this.state.tagGroups;
+        if (!groupedData) return;
+
+        let groupTags = [];
+        if (groupSlug === 'ungrouped') {
+            groupTags = groupedData.ungrouped || [];
+        } else {
+            const group = groupedData.groups?.find(g => g.slug === groupSlug);
+            groupTags = group?.tags || [];
+        }
+
+        // Remove all tags from this group from the filter
+        groupTags.forEach(tag => {
+            const index = this.state.filters.tags.indexOf(tag.slug);
+            if (index !== -1) {
+                this.state.filters.tags.splice(index, 1);
+            }
+        });
+
+        this.state.pagination.page = 1;
+        this.renderTagFilters();
+        this.updateActiveTagsDisplay();
+        this.loadFurniture();
+        this.updateUrl();
+    },
+
+    /**
+     * Toggle a single tag filter
+     */
+    toggleTagFilter(slug) {
+        const index = this.state.filters.tags.indexOf(slug);
+        
+        if (index === -1) {
+            this.state.filters.tags.push(slug);
+        } else {
+            this.state.filters.tags.splice(index, 1);
+        }
+        
+        // Update checkbox state in dropdown
+        const checkbox = document.querySelector(`.tag-checkbox-item input[data-slug="${slug}"]`);
+        if (checkbox) {
+            checkbox.checked = index === -1;
+        }
+        
+        // Update group count badges
+        this.updateGroupCounts();
+        
+        // Update active tags display
+        this.updateActiveTagsDisplay();
+        
+        this.state.pagination.page = 1;
+        this.loadFurniture();
+        this.updateUrl();
+    },
+
+    /**
+     * Update the selected count badges on dropdown triggers
+     */
+    updateGroupCounts() {
+        const groupedData = this.state.tagGroups;
+        if (!groupedData) return;
+
+        const updateGroupBadge = (groupSlug, tags) => {
+            const selectedCount = tags?.filter(t => 
+                this.state.filters.tags.includes(t.slug)
+            ).length || 0;
+            
+            const dropdown = document.querySelector(`.tag-group-dropdown[data-group="${groupSlug}"]`);
+            if (!dropdown) return;
+            
+            const trigger = dropdown.querySelector('.tag-group-trigger');
+            let countEl = trigger.querySelector('.group-count');
+            
+            if (selectedCount > 0) {
+                if (!countEl) {
+                    // Create count badge if doesn't exist
+                    countEl = document.createElement('span');
+                    countEl.className = 'group-count';
+                    trigger.insertBefore(countEl, trigger.querySelector('.group-arrow'));
+                }
+                countEl.textContent = selectedCount;
+            } else if (countEl) {
+                countEl.remove();
+            }
+        };
+
+        if (groupedData.groups) {
+            groupedData.groups.forEach(group => {
+                updateGroupBadge(group.slug, group.tags);
+            });
+        }
+
+        if (groupedData.ungrouped) {
+            updateGroupBadge('ungrouped', groupedData.ungrouped);
+        }
+    },
+
+    /**
+     * Update the active tags bar display
+     */
+    updateActiveTagsDisplay() {
+        const activeTags = this.elements.activeTags;
+        const activeTagsList = this.elements.activeTagsList;
+        const clearBtn = this.elements.clearFiltersBtn;
+        
+        const hasFilters = this.state.filters.tags.length > 0 || 
+                          this.state.filters.category || 
+                          this.state.filters.search;
+        
+        // Show/hide clear button
+        if (clearBtn) {
+            clearBtn.style.display = hasFilters ? 'block' : 'none';
+        }
+        
+        // Show/hide active tags bar
+        if (!activeTags || !activeTagsList) return;
+        
+        if (this.state.filters.tags.length === 0) {
+            activeTags.style.display = 'none';
+            return;
+        }
+        
+        activeTags.style.display = 'flex';
+        
+        // Build active tag pills
+        const pills = this.state.filters.tags.map(slug => {
+            const tag = this.state.tags.find(t => t.slug === slug);
+            if (!tag) return '';
+            
+            return `
+                <span class="active-tag" style="--tag-color: ${tag.color}">
+                    ${this.escapeHtml(tag.name)}
+                    <span class="remove-tag" onclick="App.toggleTagFilter('${slug}')" title="Remove">×</span>
+                </span>
+            `;
+        }).join('');
+        
+        activeTagsList.innerHTML = pills;
     },
 
     /**
@@ -1080,6 +1359,7 @@ const App = {
         this.state.filters.tags = [];
         this.state.pagination.page = 1;
         this.renderTagFilters();
+        this.updateActiveTagsDisplay();
         this.loadFurniture();
         this.updateUrl();
     },
@@ -1196,6 +1476,7 @@ const App = {
 
         // Tag filters
         this.renderTagFilters();
+        this.updateActiveTagsDisplay();
     },
 
     /**
