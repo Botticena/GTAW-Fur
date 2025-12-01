@@ -362,6 +362,129 @@ try {
             break;
 
         // =============================================
+        // TAG GROUP ENDPOINTS
+        // =============================================
+
+        case 'tag-groups/list':
+            if ($method !== 'GET') {
+                jsonError('Method not allowed', 405);
+            }
+            jsonSuccess(getTagGroups());
+            break;
+
+        case 'tag-groups/get':
+            if ($method !== 'GET') {
+                jsonError('Method not allowed', 405);
+            }
+
+            $id = (int) ($_GET['id'] ?? 0);
+            if ($id <= 0) {
+                jsonError('Invalid tag group ID');
+            }
+
+            $group = getTagGroupById($id);
+            if (!$group) {
+                jsonError('Tag group not found', 404);
+            }
+
+            jsonSuccess($group);
+            break;
+
+        case 'tag-groups/create':
+            if ($method !== 'POST') {
+                jsonError('Method not allowed', 405);
+            }
+
+            $input = getJsonInput() ?? $_POST;
+            $name = trim($input['name'] ?? '');
+            
+            if (empty($name)) {
+                jsonError('Tag group name is required');
+            }
+
+            $id = createTagGroup([
+                'name' => $name,
+                'color' => $input['color'] ?? '#6b7280',
+                'sort_order' => (int) ($input['sort_order'] ?? 0),
+            ]);
+
+            jsonSuccess(['id' => $id], 'Tag group created successfully');
+            break;
+
+        case 'tag-groups/update':
+            if ($method !== 'POST') {
+                jsonError('Method not allowed', 405);
+            }
+
+            $id = (int) ($_GET['id'] ?? 0);
+            if ($id <= 0) {
+                jsonError('Invalid tag group ID');
+            }
+
+            $input = getJsonInput() ?? $_POST;
+            $data = [];
+
+            if (isset($input['name'])) {
+                $data['name'] = trim($input['name']);
+            }
+            if (isset($input['color'])) {
+                $data['color'] = $input['color'];
+            }
+            if (isset($input['sort_order'])) {
+                $data['sort_order'] = (int) $input['sort_order'];
+            }
+
+            if (empty($data)) {
+                jsonError('No data to update');
+            }
+
+            if (!updateTagGroup($id, $data)) {
+                jsonError('Failed to update tag group');
+            }
+
+            jsonSuccess(null, 'Tag group updated successfully');
+            break;
+
+        case 'tag-groups/delete':
+            if ($method !== 'POST' && $method !== 'DELETE') {
+                jsonError('Method not allowed', 405);
+            }
+
+            $id = (int) ($_GET['id'] ?? 0);
+            if ($id <= 0) {
+                jsonError('Invalid tag group ID');
+            }
+
+            if (!deleteTagGroup($id)) {
+                jsonError('Failed to delete tag group');
+            }
+
+            jsonSuccess(null, 'Tag group deleted successfully');
+            break;
+
+        case 'tag-groups/reorder':
+            if ($method !== 'POST') {
+                jsonError('Method not allowed', 405);
+            }
+
+            $input = getJsonInput();
+            $order = $input['order'] ?? [];
+            
+            if (empty($order) || !is_array($order)) {
+                jsonError('Invalid order data');
+            }
+
+            global $pdo;
+            $stmt = $pdo->prepare('UPDATE tag_groups SET sort_order = ? WHERE id = ?');
+            
+            foreach ($order as $item) {
+                $stmt->execute([(int) $item['order'], (int) $item['id']]);
+            }
+
+            jsonSuccess(null, 'Order saved successfully');
+            break;
+
+        // =============================================
         // TAG ENDPOINTS
         // =============================================
 
@@ -370,6 +493,13 @@ try {
                 jsonError('Method not allowed', 405);
             }
             jsonSuccess(getTags());
+            break;
+
+        case 'tags/grouped':
+            if ($method !== 'GET') {
+                jsonError('Method not allowed', 405);
+            }
+            jsonSuccess(getTagsGrouped());
             break;
 
         case 'tags/create':
@@ -387,6 +517,7 @@ try {
             $id = createTag([
                 'name' => $name,
                 'color' => $input['color'] ?? '#6b7280',
+                'group_id' => isset($input['group_id']) && $input['group_id'] !== '' ? (int) $input['group_id'] : null,
             ]);
 
             jsonSuccess(['id' => $id], 'Tag created successfully');
@@ -410,6 +541,9 @@ try {
             }
             if (isset($input['color'])) {
                 $data['color'] = $input['color'];
+            }
+            if (array_key_exists('group_id', $input)) {
+                $data['group_id'] = $input['group_id'] !== '' && $input['group_id'] !== null ? (int) $input['group_id'] : null;
             }
 
             if (empty($data)) {
