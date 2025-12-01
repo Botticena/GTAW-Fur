@@ -556,11 +556,134 @@ function deleteCategory(int $id): bool
 }
 
 // ============================================
+// TAG GROUP FUNCTIONS
+// ============================================
+
+/**
+ * Get all tag groups
+ */
+function getTagGroups(): array
+{
+    global $pdo;
+    
+    if ($pdo === null) {
+        return [];
+    }
+    
+    $stmt = $pdo->query('
+        SELECT id, name, slug, color, sort_order
+        FROM tag_groups
+        ORDER BY sort_order ASC, name ASC
+    ');
+    
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Get tag group by ID
+ */
+function getTagGroupById(int $id): ?array
+{
+    global $pdo;
+    
+    if ($pdo === null) {
+        return null;
+    }
+    
+    $stmt = $pdo->prepare('SELECT * FROM tag_groups WHERE id = ?');
+    $stmt->execute([$id]);
+    return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
+/**
+ * Create tag group
+ */
+function createTagGroup(array $data): int
+{
+    global $pdo;
+    
+    if ($pdo === null) {
+        throw new RuntimeException('Database not available');
+    }
+    
+    $slug = createSlug($data['name']);
+    
+    $stmt = $pdo->prepare('
+        INSERT INTO tag_groups (name, slug, color, sort_order)
+        VALUES (?, ?, ?, ?)
+    ');
+    
+    $stmt->execute([
+        $data['name'],
+        $slug,
+        $data['color'] ?? '#6b7280',
+        $data['sort_order'] ?? 0,
+    ]);
+    
+    return (int) $pdo->lastInsertId();
+}
+
+/**
+ * Update tag group
+ */
+function updateTagGroup(int $id, array $data): bool
+{
+    global $pdo;
+    
+    if ($pdo === null) {
+        return false;
+    }
+    
+    $fields = [];
+    $params = [];
+    
+    if (isset($data['name'])) {
+        $fields[] = 'name = ?';
+        $params[] = $data['name'];
+        $fields[] = 'slug = ?';
+        $params[] = createSlug($data['name']);
+    }
+    if (isset($data['color'])) {
+        $fields[] = 'color = ?';
+        $params[] = $data['color'];
+    }
+    if (isset($data['sort_order'])) {
+        $fields[] = 'sort_order = ?';
+        $params[] = $data['sort_order'];
+    }
+    
+    if (empty($fields)) {
+        return false;
+    }
+    
+    $params[] = $id;
+    $sql = 'UPDATE tag_groups SET ' . implode(', ', $fields) . ' WHERE id = ?';
+    
+    $stmt = $pdo->prepare($sql);
+    return $stmt->execute($params);
+}
+
+/**
+ * Delete tag group (tags will have group_id set to NULL)
+ */
+function deleteTagGroup(int $id): bool
+{
+    global $pdo;
+    
+    if ($pdo === null) {
+        return false;
+    }
+    
+    $stmt = $pdo->prepare('DELETE FROM tag_groups WHERE id = ?');
+    return $stmt->execute([$id]);
+}
+
+// ============================================
 // TAG FUNCTIONS
 // ============================================
 
 /**
- * Get all tags
+ * Get all tags with group information
  */
 function getTags(): array
 {
@@ -571,15 +694,69 @@ function getTags(): array
     }
     
     $stmt = $pdo->query('
-        SELECT t.id, t.name, t.slug, t.color,
+        SELECT t.id, t.name, t.slug, t.color, t.group_id,
+               tg.name as group_name, tg.slug as group_slug, tg.color as group_color,
+               COUNT(ft.furniture_id) as usage_count
+        FROM tags t
+        LEFT JOIN tag_groups tg ON t.group_id = tg.id
+        LEFT JOIN furniture_tags ft ON t.id = ft.tag_id
+        GROUP BY t.id
+        ORDER BY tg.sort_order ASC, t.name ASC
+    ');
+    
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Get tags grouped by their tag groups
+ * Returns structure: { groups: [...], ungrouped: [...] }
+ */
+function getTagsGrouped(): array
+{
+    global $pdo;
+    
+    if ($pdo === null) {
+        return ['groups' => [], 'ungrouped' => []];
+    }
+    
+    // Get all groups
+    $groups = getTagGroups();
+    
+    // Get all tags with usage count
+    $stmt = $pdo->query('
+        SELECT t.id, t.name, t.slug, t.color, t.group_id,
                COUNT(ft.furniture_id) as usage_count
         FROM tags t
         LEFT JOIN furniture_tags ft ON t.id = ft.tag_id
         GROUP BY t.id
         ORDER BY t.name ASC
     ');
+    $allTags = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // Organize tags by group
+    $groupedTags = [];
+    $ungrouped = [];
+    
+    foreach ($allTags as $tag) {
+        if ($tag['group_id']) {
+            if (!isset($groupedTags[$tag['group_id']])) {
+                $groupedTags[$tag['group_id']] = [];
+            }
+            $groupedTags[$tag['group_id']][] = $tag;
+        } else {
+            $ungrouped[] = $tag;
+        }
+    }
+    
+    // Attach tags to groups
+    foreach ($groups as &$group) {
+        $group['tags'] = $groupedTags[$group['id']] ?? [];
+    }
+    
+    return [
+        'groups' => $groups,
+        'ungrouped' => $ungrouped,
+    ];
 }
 
 /**
@@ -638,11 +815,12 @@ function createTag(array $data): int
     
     $slug = createSlug($data['name']);
     
-    $stmt = $pdo->prepare('INSERT INTO tags (name, slug, color) VALUES (?, ?, ?)');
+    $stmt = $pdo->prepare('INSERT INTO tags (name, slug, color, group_id) VALUES (?, ?, ?, ?)');
     $stmt->execute([
         $data['name'],
         $slug,
         $data['color'] ?? '#6b7280',
+        $data['group_id'] ?? null,
     ]);
     
     return (int) $pdo->lastInsertId();
@@ -671,6 +849,10 @@ function updateTag(int $id, array $data): bool
     if (isset($data['color'])) {
         $fields[] = 'color = ?';
         $params[] = $data['color'];
+    }
+    if (array_key_exists('group_id', $data)) {
+        $fields[] = 'group_id = ?';
+        $params[] = $data['group_id'];
     }
     
     if (empty($fields)) {
@@ -1040,12 +1222,22 @@ function validateFurnitureInput(array $input): array
         $data['price'] = $price;
     }
     
-    // Image URL: optional, basic validation
+    // Image URL: optional, allow relative paths or absolute URLs
     $imageUrl = trim($input['image_url'] ?? '');
-    if ($imageUrl !== '' && strlen($imageUrl) > 500) {
-        $errors['image_url'] = 'Image URL is too long';
+    if ($imageUrl !== '') {
+        if (strlen($imageUrl) > 500) {
+            $errors['image_url'] = 'Image URL is too long';
+        } elseif (str_starts_with($imageUrl, '/')) {
+            // Valid relative path
+            $data['image_url'] = $imageUrl;
+        } elseif (filter_var($imageUrl, FILTER_VALIDATE_URL)) {
+            // Valid absolute URL
+            $data['image_url'] = $imageUrl;
+        } else {
+            $errors['image_url'] = 'Image must be a relative path (starting with /) or a valid URL';
+        }
     } else {
-        $data['image_url'] = $imageUrl ?: null;
+        $data['image_url'] = null;
     }
     
     // Tags: optional array of tag IDs
