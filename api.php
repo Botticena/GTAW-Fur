@@ -128,6 +128,15 @@ try {
             if ($method !== 'GET') {
                 jsonError('Method not allowed', 405);
             }
+            // Return grouped structure for frontend filtering UI
+            jsonSuccess(getTagsGrouped());
+            break;
+        
+        case 'tags/flat':
+            // Return flat list (for backwards compatibility or simple use cases)
+            if ($method !== 'GET') {
+                jsonError('Method not allowed', 405);
+            }
             jsonSuccess(getTags());
             break;
 
