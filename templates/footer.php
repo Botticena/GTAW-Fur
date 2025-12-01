@@ -31,6 +31,25 @@ declare(strict_types=1);
         <div class="loading-spinner"></div>
     </div>
     
+    <!-- Image Lightbox -->
+    <div id="lightbox" class="lightbox-overlay" role="dialog" aria-modal="true" aria-label="Image preview" tabindex="-1">
+        <button class="lightbox-close" aria-label="Close preview" title="Close (ESC)">&times;</button>
+        <button class="lightbox-nav prev" aria-label="Previous image" title="Previous (←)">‹</button>
+        <button class="lightbox-nav next" aria-label="Next image" title="Next (→)">›</button>
+        <div class="lightbox-content">
+            <img src="" alt="" id="lightbox-image">
+            <div class="lightbox-info">
+                <h3 id="lightbox-title"></h3>
+                <p class="meta" id="lightbox-meta"></p>
+                <div class="lightbox-actions">
+                    <button class="btn-copy" id="lightbox-copy" title="Copy /sf command">
+                        📋 Copy /sf command
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <!-- Main Application Script -->
     <script src="/js/app.js"></script>
 </body>
