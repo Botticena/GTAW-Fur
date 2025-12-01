@@ -185,34 +185,53 @@
 .data-table td {
     padding: var(--spacing-md);
     text-align: left;
+    vertical-align: middle;
     border-bottom: 1px solid var(--border-color);
 }
 
 .data-table th {
     background: var(--bg-elevated);
     font-weight: 600;
-    font-size: 0.875rem;
+    font-size: 0.75rem;
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
 
+.data-table tbody tr {
+    transition: background var(--transition-fast);
+}
+
 .data-table tbody tr:hover {
-    background: var(--bg-elevated);
+    background: rgba(255, 255, 255, 0.02);
 }
 
 .data-table tbody tr:last-child td {
     border-bottom: none;
 }
 
-.data-table .actions {
-    display: flex;
-    gap: var(--spacing-xs);
+/* Actions column - inline buttons without flexbox on td */
+.data-table td.actions {
+    white-space: nowrap;
+}
+
+.data-table td.actions .btn,
+.data-table td.actions .btn-sm {
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: var(--spacing-xs);
+}
+
+.data-table td.actions .btn:last-child,
+.data-table td.actions .btn-sm:last-child {
+    margin-right: 0;
 }
 
 .data-table .btn-sm {
-    padding: var(--spacing-xs) var(--spacing-sm);
+    height: 28px;
+    padding: 0 var(--spacing-sm);
     font-size: 0.75rem;
+    line-height: 28px;
 }
 
 /* ============================================
@@ -323,7 +342,8 @@
     align-items: center;
     justify-content: center;
     gap: var(--spacing-sm);
-    padding: var(--spacing-sm) var(--spacing-lg);
+    padding: 0 var(--spacing-lg);
+    height: 38px;
     background: var(--bg-elevated);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
@@ -333,11 +353,17 @@
     cursor: pointer;
     text-decoration: none;
     transition: all var(--transition-fast);
+    box-sizing: border-box;
+    line-height: 1;
 }
 
 .btn:hover {
     border-color: var(--primary);
     color: var(--primary);
+}
+
+.btn:active {
+    transform: scale(0.98);
 }
 
 .btn-primary {
@@ -377,12 +403,14 @@
 }
 
 .btn-sm {
-    padding: var(--spacing-xs) var(--spacing-sm);
+    padding: 0 var(--spacing-sm);
+    height: 30px;
     font-size: 0.75rem;
 }
 
 .btn-lg {
-    padding: var(--spacing-md) var(--spacing-xl);
+    padding: 0 var(--spacing-xl);
+    height: 44px;
     font-size: 1rem;
 }
 
@@ -521,11 +549,15 @@
    BADGE
    ============================================ */
 .badge {
-    display: inline-block;
-    padding: 0.125rem var(--spacing-sm);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 8px;
     border-radius: var(--radius-full);
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 500;
+    white-space: nowrap;
+    line-height: 1.4;
 }
 
 .badge-success {
@@ -541,6 +573,124 @@
 .badge-warning {
     background: rgba(234, 179, 8, 0.1);
     color: var(--warning);
+}
+
+/* Tag badge in tables */
+.data-table .badge {
+    margin: 1px;
+}
+
+/* ============================================
+   BATCH OPERATIONS
+   ============================================ */
+.batch-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-md);
+    opacity: 0;
+    height: 0;
+    overflow: hidden;
+    transition: all var(--transition-fast);
+}
+
+.batch-controls.visible {
+    opacity: 1;
+    height: auto;
+    padding: var(--spacing-md);
+}
+
+.batch-controls .selected-count {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.batch-controls .selected-count strong {
+    color: var(--primary);
+}
+
+.data-table .select-checkbox {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: var(--primary);
+}
+
+.data-table th.select-all {
+    width: 40px;
+    text-align: center;
+}
+
+.data-table td.select-cell {
+    text-align: center;
+}
+
+/* ============================================
+   DRAG AND DROP REORDERING
+   ============================================ */
+.sortable-row {
+    cursor: grab;
+    transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.sortable-row:active {
+    cursor: grabbing;
+}
+
+.sortable-row.dragging {
+    background: var(--primary-focus) !important;
+    transform: scale(1.02);
+    box-shadow: var(--shadow-md);
+    z-index: 10;
+    position: relative;
+}
+
+.sortable-row.drag-over {
+    border-top: 2px solid var(--primary);
+}
+
+.sortable-row .drag-handle {
+    cursor: grab;
+    color: var(--text-muted);
+    font-size: 1.25rem;
+    padding: 0 var(--spacing-sm);
+    user-select: none;
+    transition: color var(--transition-fast);
+}
+
+.sortable-row:hover .drag-handle {
+    color: var(--text-secondary);
+}
+
+.sortable-row.dragging .drag-handle {
+    cursor: grabbing;
+    color: var(--primary);
+}
+
+/* Order changed indicator */
+.order-changed {
+    display: none;
+    padding: var(--spacing-md);
+    background: var(--success-bg);
+    border: 1px solid var(--success);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-md);
+    animation: fadeIn 0.3s ease;
+}
+
+.order-changed.visible {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 /* ============================================
@@ -582,6 +732,98 @@
     margin-top: var(--spacing-lg);
     color: var(--text-secondary);
     font-size: 0.875rem;
+}
+
+/* ============================================
+   TOAST CONTAINER (ADMIN)
+   ============================================ */
+.toast-container {
+    position: fixed;
+    bottom: var(--spacing-xl);
+    right: var(--spacing-xl);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md) var(--spacing-lg);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    animation: slideIn 0.3s ease;
+    max-width: 350px;
+}
+
+.toast.success {
+    border-left: 4px solid var(--success);
+}
+
+.toast.error {
+    border-left: 4px solid var(--error);
+}
+
+.toast.info {
+    border-left: 4px solid var(--info);
+}
+
+.toast.hiding {
+    animation: fadeOut 0.3s ease forwards;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+        transform: translateX(50%);
+    }
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+.admin-main {
+    animation: fadeInUp 0.3s ease;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.stat-card {
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
 }
 
 /* ============================================
