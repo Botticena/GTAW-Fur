@@ -16,6 +16,13 @@ This is a community project I built to help GTA World players find furniture mor
 - **Personal Favorites** — Save items via GTA World OAuth login
 - **Mobile Responsive** — Works on any device
 
+### Features
+
+- **Rich filters** — Categories plus grouped tag filters (style, mood, size, materials, effects, themes)
+- **Image lightbox** — Click any image to open a zoomed preview with next/previous navigation and shareable deep links
+- **Keyboard shortcuts** — `/` to focus search, arrow keys to navigate cards, `C` to copy `/sf` and `F` to toggle favorites
+- **Favorites export** — Export all your saved items as a ready-to-use list of `/sf` commands (clipboard or text file)
+
 The application is hosted at **[https://gtawfur.nctrn.cc/](https://gtawfur.nctrn.cc/)** — this is the only supported instance (for now).
 
 ---
