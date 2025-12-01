@@ -45,6 +45,17 @@ declare(strict_types=1);
                     <button class="btn-copy" id="lightbox-copy" title="Copy /sf command">
                         📋 Copy /sf command
                     </button>
+                    <button class="btn-favorite" id="lightbox-favorite" title="Add to favorites" aria-label="Add to favorites">
+                        🤍
+                    </button>
+                    <button class="btn-share" id="lightbox-share" title="Share link to this furniture">
+                        🔗 Share
+                    </button>
+                    <?php if (isAdminLoggedIn()): ?>
+                    <a href="#" class="btn-edit" id="lightbox-edit" title="Edit this furniture">
+                        ✏️ Edit
+                    </a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
