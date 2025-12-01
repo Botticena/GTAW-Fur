@@ -29,3 +29,9 @@ composer.phar
 
 # Test files with sensitive data
 test_*.php
+
+# User uploaded/processed images
+images/furniture/*.webp
+images/furniture/*.jpg
+images/furniture/*.png
+!images/furniture/.gitkeep
