@@ -38,6 +38,7 @@ require_once __DIR__ . '/templates/header.php';
     <section class="search-section">
         <div class="container">
             <div class="search-container">
+                <span class="search-spinner"></span>
                 <input 
                     type="search" 
                     id="search-input" 
@@ -47,7 +48,7 @@ require_once __DIR__ . '/templates/header.php';
                 >
             </div>
             <p class="search-hint">
-                Press <kbd>/</kbd> to focus search • <kbd>C</kbd> to copy command • Click image to zoom
+                Press <kbd>/</kbd> to focus search • <kbd>C</kbd> to copy command • Click image to zoom • <kbd>↑↓←→</kbd> to navigate
             </p>
         </div>
     </section>
