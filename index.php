@@ -75,13 +75,22 @@ require_once __DIR__ . '/templates/header.php';
                         <option value="newest-desc">Newest First</option>
                     </select>
                 </div>
+                
+                <button type="button" id="clear-filters" class="btn-clear-filters" style="display: none;">
+                    Clear All Filters
+                </button>
             </div>
             
-            <!-- Tag Filters -->
-            <div class="filters" style="margin-top: var(--spacing-sm);">
-                <span class="tag-filters-label">Tags:</span>
-                <div id="tag-filters" class="tag-filters" aria-label="Filter by tags">
-                    <!-- Populated by JavaScript -->
+            <!-- Grouped Tag Filters -->
+            <div id="tag-filters-container" class="tag-filters-container" aria-label="Filter by tags">
+                <!-- Populated by JavaScript with grouped tag sections -->
+            </div>
+            
+            <!-- Active Tags Display -->
+            <div id="active-tags" class="active-tags" style="display: none;">
+                <span class="active-tags-label">Active filters:</span>
+                <div id="active-tags-list" class="active-tags-list">
+                    <!-- Shows selected tags -->
                 </div>
             </div>
         </div>
