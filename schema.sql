@@ -27,6 +27,22 @@ CREATE TABLE IF NOT EXISTS categories (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================
+-- TAG GROUPS
+-- Logical groupings for tags (Style, Mood, Size, etc.)
+-- =============================================
+CREATE TABLE IF NOT EXISTS tag_groups (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL,
+    slug VARCHAR(50) NOT NULL UNIQUE,
+    color VARCHAR(7) DEFAULT '#6b7280',
+    sort_order INT UNSIGNED DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    INDEX idx_slug (slug),
+    INDEX idx_sort (sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================
 -- TAGS
 -- Descriptive tags for furniture (style, size, etc.)
 -- =============================================
@@ -35,9 +51,15 @@ CREATE TABLE IF NOT EXISTS tags (
     name VARCHAR(50) NOT NULL,
     slug VARCHAR(50) NOT NULL UNIQUE,
     color VARCHAR(7) DEFAULT '#6b7280',
+    group_id INT UNSIGNED DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
-    INDEX idx_slug (slug)
+    CONSTRAINT fk_tag_group 
+        FOREIGN KEY (group_id) REFERENCES tag_groups(id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+    
+    INDEX idx_slug (slug),
+    INDEX idx_group (group_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================
@@ -140,87 +162,306 @@ CREATE TABLE IF NOT EXISTS admins (
 -- =============================================
 -- SEED DATA: Default Categories
 -- =============================================
-INSERT INTO categories (name, slug, icon, sort_order) VALUES
-('Walls', 'walls', '🧱', 1),
-('Floors', 'floors', '🟫', 2),
-('Doors', 'doors', '🚪', 3),
-('Windows', 'windows', '🪟', 4),
-('Seating', 'seating', '🪑', 5),
-('Tables', 'tables', '🪵', 6),
-('Beds', 'beds', '🛏️', 7),
-('Storage', 'storage', '🗄️', 8),
-('Appliances', 'appliances', '🍳', 9),
-('Lighting', 'lighting', '💡', 10),
-('Decorations', 'decorations', '🖼️', 11),
-('Electronics', 'electronics', '📺', 12),
-('Bathroom', 'bathroom', '🚿', 13),
-('Kitchen', 'kitchen', '🍽️', 14),
-('Outdoor', 'outdoor', '🌳', 15),
-('Office', 'office', '💼', 16),
-('Industrial', 'industrial', '🏭', 17),
-('Casino', 'casino', '🎰', 18),
-('Bar', 'bar', '🍺', 19),
-('Medical', 'medical', '🏥', 20),
-('Miscellaneous', 'misc', '📦', 99)
+INSERT INTO `categories` (`id`, `name`, `slug`, `icon`, `sort_order`, `created_at`) VALUES
+(1, 'Architecture', 'architecture', '🏗', 1, '2025-12-01 14:07:47'),
+(2, 'Seating', 'seating', '🛋', 2, '2025-12-01 14:09:22'),
+(3, 'Tables', 'tables', '🛎', 3, '2025-12-01 14:09:55'),
+(4, 'Beds', 'beds', '🛏️', 4, '2025-11-30 16:25:45'),
+(5, 'Storage', 'storage', '🗄️', 5, '2025-11-30 16:25:45'),
+(6, 'Kitchen', 'kitchen', '🍽', 6, '2025-12-01 14:12:04'),
+(7, 'Bathroom', 'bathroom', '🚿', 7, '2025-11-30 16:25:45'),
+(8, 'Lighting', 'lighting', '💡', 8, '2025-11-30 16:25:45'),
+(9, 'Visual Effects', 'visual-effects', '✨', 9, '2025-12-01 14:19:14'),
+(10, 'Electronics', 'electronics', '📺', 10, '2025-11-30 16:25:45'),
+(11, 'Decor', 'decor', '🎨', 11, '2025-12-01 14:20:00'),
+(12, 'Plants', 'plants', '🌿', 12, '2025-12-01 14:20:15'),
+(13, 'Rugs & Carpets', 'rugs-carpets', '🧶', 13, '2025-12-01 14:20:31'),
+(14, 'Textiles', 'textiles', '🧵', 14, '2025-12-01 14:20:52'),
+(15, 'Office', 'office', '💼', 15, '2025-12-01 14:21:12'),
+(16, 'Retail', 'retail', '🏬', 16, '2025-12-01 14:21:28'),
+(17, 'Hospitality', 'hospitality', '🍹', 17, '2025-12-01 14:21:51'),
+(18, 'Industrial', 'industrial', '🏭', 18, '2025-12-01 14:22:42'),
+(19, 'Outdoor', 'outdoor', '🌳', 19, '2025-12-01 14:23:14'),
+(20, 'Pets', 'pets', '🐾', 20, '2025-12-01 14:23:27'),
+(21, 'Kids', 'kids', '🧸', 21, '2025-12-01 14:23:40'),
+(22, 'Food & Drink', 'food-drink', '🍔', 22, '2025-12-01 14:23:55'),
+(23, 'Medical', 'medical', '🏥', 23, '2025-12-01 14:24:10'),
+(24, 'Tools & Equipment', 'tools-equipment', '🛠', 24, '2025-12-01 14:24:25'),
+(25, 'Signs & Labels', 'signs-labels', '🚧', 25, '2025-12-01 14:24:39'),
+(26, 'Vehicles & Garage', 'vehicles-garage', '🚗', 26, '2025-12-01 14:24:51'),
+(99, 'Miscellaneous', 'miscellaneous', '📦', 99, '2025-12-01 14:25:04');
+
+-- =============================================
+-- SEED DATA: Default Tag Groups
+-- =============================================
+INSERT INTO tag_groups (name, slug, color, sort_order) VALUES
+('Style / Era', 'style', '#3b82f6', 1),
+('Mood / Atmosphere', 'mood', '#f97316', 2),
+('Size / Presence', 'size', '#22c55e', 3),
+('Form / Placement', 'form', '#14b8a6', 4),
+('Materials / Finish', 'materials', '#6366f1', 5),
+('Color-Oriented', 'color-oriented', '#ec4899', 6),
+('Effects / Behavior', 'effects', '#a855f7', 7),
+('Theme / Use-Case', 'theme', '#6b7280', 8)
 ON DUPLICATE KEY UPDATE name = VALUES(name);
 
 -- =============================================
--- SEED DATA: Default Tags
+-- SEED DATA: Default Tags 
 -- =============================================
-INSERT INTO tags (name, slug, color) VALUES
-('modern', 'modern', '#3b82f6'),
-('rustic', 'rustic', '#92400e'),
-('luxury', 'luxury', '#eab308'),
-('industrial', 'industrial', '#6b7280'),
-('minimalist', 'minimalist', '#a3a3a3'),
-('vintage', 'vintage', '#a16207'),
-('cozy', 'cozy', '#f97316'),
-('professional', 'professional', '#1e40af'),
-('small', 'small', '#06b6d4'),
-('medium', 'medium', '#8b5cf6'),
-('large', 'large', '#ec4899'),
-('animated', 'animated', '#10b981')
-ON DUPLICATE KEY UPDATE name = VALUES(name);
+-- Style / Era tags (group_id = 1)
+INSERT INTO tags (name, slug, color, group_id) VALUES
+('modern', 'modern', '#3b82f6', 1),
+('contemporary', 'contemporary', '#3b82f6', 1),
+('minimalist', 'minimalist', '#3b82f6', 1),
+('industrial', 'industrial', '#3b82f6', 1),
+('rustic', 'rustic', '#3b82f6', 1),
+('vintage', 'vintage', '#3b82f6', 1),
+('classic', 'classic', '#3b82f6', 1),
+('luxury', 'luxury', '#3b82f6', 1),
+('boho', 'boho', '#3b82f6', 1),
+('futuristic', 'futuristic', '#3b82f6', 1)
+ON DUPLICATE KEY UPDATE group_id = VALUES(group_id);
+
+-- Mood / Atmosphere tags (group_id = 2)
+INSERT INTO tags (name, slug, color, group_id) VALUES
+('cozy', 'cozy', '#f97316', 2),
+('elegant', 'elegant', '#f97316', 2),
+('casual', 'casual', '#f97316', 2),
+('gritty', 'gritty', '#f97316', 2),
+('formal', 'formal', '#f97316', 2),
+('playful', 'playful', '#f97316', 2),
+('dark', 'dark', '#f97316', 2),
+('bright', 'bright', '#f97316', 2)
+ON DUPLICATE KEY UPDATE group_id = VALUES(group_id);
+
+-- Size / Presence tags (group_id = 3)
+INSERT INTO tags (name, slug, color, group_id) VALUES
+('small', 'small', '#22c55e', 3),
+('medium', 'medium', '#22c55e', 3),
+('large', 'large', '#22c55e', 3),
+('compact', 'compact', '#22c55e', 3),
+('oversized', 'oversized', '#22c55e', 3)
+ON DUPLICATE KEY UPDATE group_id = VALUES(group_id);
+
+-- Form / Placement tags (group_id = 4)
+INSERT INTO tags (name, slug, color, group_id) VALUES
+('wall-mounted', 'wall-mounted', '#14b8a6', 4),
+('ceiling-mounted', 'ceiling-mounted', '#14b8a6', 4),
+('floor-standing', 'floor-standing', '#14b8a6', 4),
+('corner-piece', 'corner-piece', '#14b8a6', 4),
+('low-profile', 'low-profile', '#14b8a6', 4),
+('tall', 'tall', '#14b8a6', 4)
+ON DUPLICATE KEY UPDATE group_id = VALUES(group_id);
+
+-- Materials / Finish tags (group_id = 5)
+INSERT INTO tags (name, slug, color, group_id) VALUES
+('wood', 'wood', '#6366f1', 5),
+('metal', 'metal', '#6366f1', 5),
+('glass', 'glass', '#6366f1', 5),
+('stone', 'stone', '#6366f1', 5),
+('fabric', 'fabric', '#6366f1', 5),
+('leather', 'leather', '#6366f1', 5),
+('plastic', 'plastic', '#6366f1', 5),
+('wicker', 'wicker', '#6366f1', 5),
+('marble', 'marble', '#6366f1', 5),
+('neon', 'neon', '#6366f1', 5)
+ON DUPLICATE KEY UPDATE group_id = VALUES(group_id);
+
+-- Color-Oriented tags (group_id = 6)
+INSERT INTO tags (name, slug, color, group_id) VALUES
+('light-tone', 'light-tone', '#ec4899', 6),
+('dark-tone', 'dark-tone', '#ec4899', 6),
+('monochrome', 'monochrome', '#ec4899', 6),
+('colorful', 'colorful', '#ec4899', 6),
+('pastel', 'pastel', '#ec4899', 6)
+ON DUPLICATE KEY UPDATE group_id = VALUES(group_id);
+
+-- Effects / Behavior tags (group_id = 7)
+INSERT INTO tags (name, slug, color, group_id) VALUES
+('animated', 'animated', '#a855f7', 7),
+('glowing', 'glowing', '#a855f7', 7),
+('light-fx', 'light-fx', '#a855f7', 7),
+('water-fx', 'water-fx', '#a855f7', 7),
+('interactive', 'interactive', '#a855f7', 7)
+ON DUPLICATE KEY UPDATE group_id = VALUES(group_id);
+
+-- Theme / Use-Case tags (group_id = 8)
+INSERT INTO tags (name, slug, color, group_id) VALUES
+('festive', 'festive', '#6b7280', 8),
+('seasonal', 'seasonal', '#6b7280', 8),
+('holiday', 'holiday', '#6b7280', 8),
+('romantic', 'romantic', '#6b7280', 8),
+('party', 'party', '#6b7280', 8),
+('sport', 'sport', '#6b7280', 8),
+('music', 'music', '#6b7280', 8),
+('arcade', 'arcade', '#6b7280', 8),
+('lux-brand', 'lux-brand', '#6b7280', 8),
+('street-style', 'street-style', '#6b7280', 8),
+('racing', 'racing', '#6b7280', 8),
+('crime', 'crime', '#6b7280', 8),
+('professional', 'professional', '#6b7280', 8)
+ON DUPLICATE KEY UPDATE group_id = VALUES(group_id);
 
 -- =============================================
--- SEED DATA: Sample Furniture (for testing)
+-- SEED DATA: Example Furniture Items
 -- =============================================
-INSERT INTO furniture (name, category_id, price) VALUES
-('prop_table_01', (SELECT id FROM categories WHERE slug = 'tables'), 450),
-('prop_table_02', (SELECT id FROM categories WHERE slug = 'tables'), 550),
-('prop_table_03', (SELECT id FROM categories WHERE slug = 'tables'), 650),
-('prop_chair_01', (SELECT id FROM categories WHERE slug = 'seating'), 150),
-('prop_chair_02', (SELECT id FROM categories WHERE slug = 'seating'), 200),
-('prop_sofa_01', (SELECT id FROM categories WHERE slug = 'seating'), 1200),
-('prop_bed_01', (SELECT id FROM categories WHERE slug = 'beds'), 800),
-('prop_bed_02', (SELECT id FROM categories WHERE slug = 'beds'), 1500),
-('prop_lamp_01', (SELECT id FROM categories WHERE slug = 'lighting'), 75),
-('prop_lamp_02', (SELECT id FROM categories WHERE slug = 'lighting'), 120),
-('prop_tv_01', (SELECT id FROM categories WHERE slug = 'electronics'), 450),
-('prop_tv_02', (SELECT id FROM categories WHERE slug = 'electronics'), 800),
-('prop_cabinet_01', (SELECT id FROM categories WHERE slug = 'storage'), 350),
-('prop_shelf_01', (SELECT id FROM categories WHERE slug = 'storage'), 200),
-('prop_desk_01', (SELECT id FROM categories WHERE slug = 'office'), 400),
-('prop_plant_01', (SELECT id FROM categories WHERE slug = 'decorations'), 50),
-('prop_plant_02', (SELECT id FROM categories WHERE slug = 'decorations'), 75),
-('prop_painting_01', (SELECT id FROM categories WHERE slug = 'decorations'), 150),
-('prop_rug_01', (SELECT id FROM categories WHERE slug = 'floors'), 200),
-('prop_toilet_01', (SELECT id FROM categories WHERE slug = 'bathroom'), 250)
-ON DUPLICATE KEY UPDATE name = VALUES(name);
 
--- Add some tags to sample furniture
+INSERT INTO `furniture` (`id`, `name`, `category_id`, `price`, `image_url`, `created_at`, `updated_at`) VALUES
+(54, 'Black Double Bed', 4, 250, '/images/furniture/furniture_54_1764557801_aa43a835.webp', '2025-12-01 02:56:40', '2025-12-01 02:56:41'),
+(55, 'Black Frame Bed with Nightstands', 4, 250, '/images/furniture/furniture_55_1764557844_3b46f59d.webp', '2025-12-01 02:57:23', '2025-12-01 02:57:24'),
+(56, 'Black Jersey Double bed', 4, 250, '/images/furniture/furniture_56_1764557858_f3c35c56.webp', '2025-12-01 02:57:37', '2025-12-01 02:57:38'),
+(57, 'Fairy Lights Bed', 4, 250, '/images/furniture/furniture_57_1764557875_345041e6.webp', '2025-12-01 02:57:54', '2025-12-01 02:57:55'),
+(58, 'Fancy Wooden Double Bed', 4, 250, '/images/furniture/furniture_58_1764557888_e1ea615d.webp', '2025-12-01 02:58:08', '2025-12-01 02:58:08'),
+(59, 'Grey Bed with Pillows', 4, 250, '/images/furniture/furniture_59_1764557903_2562cd97.webp', '2025-12-01 02:58:23', '2025-12-01 02:58:23'),
+(60, 'Hospital Bed Blue', 4, 250, '/images/furniture/furniture_60_1764557946_3f302f1a.webp', '2025-12-01 02:59:05', '2025-12-01 02:59:06'),
+(61, 'Hospital Bed Green', 4, 250, '/images/furniture/furniture_61_1764557957_edd7998e.webp', '2025-12-01 02:59:16', '2025-12-01 02:59:17'),
+(62, 'Iron Double Bed', 4, 250, '/images/furniture/furniture_62_1764557976_b329a028.webp', '2025-12-01 02:59:35', '2025-12-01 02:59:36'),
+(63, 'Iron Single Bed', 4, 250, '/images/furniture/furniture_63_1764557987_730add71.webp', '2025-12-01 02:59:46', '2025-12-01 02:59:47'),
+(64, 'Worn Cream Desk Lamp', 8, 250, '/images/furniture/furniture_64_1764558044_f7bdbed9.webp', '2025-12-01 03:00:43', '2025-12-01 03:00:44'),
+(65, 'White Modern Table Lamp', 8, 250, '/images/furniture/furniture_65_1764558056_a9e3866e.webp', '2025-12-01 03:00:55', '2025-12-01 03:00:56'),
+(66, 'Victorian Justice Lamp', 8, 250, '/images/furniture/furniture_66_1764558070_ea52cec5.webp', '2025-12-01 03:01:10', '2025-12-01 03:01:10'),
+(67, 'Standing Photoshoot Lights', 8, 250, '/images/furniture/furniture_67_1764558092_e72bf9ae.webp', '2025-12-01 03:01:31', '2025-12-01 03:01:32'),
+(68, 'Road Construction Light', 8, 250, '/images/furniture/furniture_68_1764558108_abb84846.webp', '2025-12-01 03:01:48', '2025-12-01 03:01:48'),
+(69, 'Low Wooden Cabinet', 5, 250, '/images/furniture/furniture_69_1764558141_c5c94a08.webp', '2025-12-01 03:02:20', '2025-12-01 03:02:21'),
+(70, 'Tall Wooden Cabinet', 5, 250, '/images/furniture/furniture_70_1764558152_9edff197.webp', '2025-12-01 03:02:32', '2025-12-01 03:02:32'),
+(71, 'Tall Grey Filing Cabinet', 5, 250, '/images/furniture/furniture_71_1764558166_dc721d53.webp', '2025-12-01 03:02:46', '2025-12-01 03:02:46'),
+(72, 'Laptop 3', 10, 250, '/images/furniture/furniture_72_1764558190_ee4e185b.webp', '2025-12-01 03:03:09', '2025-12-01 03:03:10'),
+(74, 'Modern Metal Toilet', 7, 250, '/images/furniture/furniture_74_1764558260_df50cea6.webp', '2025-12-01 03:04:19', '2025-12-01 03:04:20'),
+(75, 'Modern Metal Urinal', 7, 250, '/images/furniture/furniture_75_1764558270_e69a00cc.webp', '2025-12-01 03:04:30', '2025-12-01 03:04:30'),
+(76, 'Showerhead Advanced', 7, 250, '/images/furniture/furniture_76_1764558294_99356149.webp', '2025-12-01 03:04:53', '2025-12-01 03:04:54');
+
+-- Beds: modern / cozy / fabric / dark-tone
 INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id FROM furniture f, tags t 
-WHERE f.name = 'prop_sofa_01' AND t.slug IN ('modern', 'luxury')
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('modern', 'cozy', 'fabric', 'dark-tone')
+WHERE f.name = 'Black Double Bed'
 ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
 
 INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id FROM furniture f, tags t 
-WHERE f.name = 'prop_table_01' AND t.slug IN ('rustic', 'medium')
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('modern', 'cozy', 'fabric', 'light-tone')
+WHERE f.name = 'Black Frame Bed with Nightstands'
 ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
 
 INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id FROM furniture f, tags t 
-WHERE f.name = 'prop_desk_01' AND t.slug IN ('professional', 'modern')
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('minimalist', 'cozy', 'fabric', 'dark-tone')
+WHERE f.name = 'Black Jersey Double bed'
+ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
+
+-- Fairy lights bed: boho, romantic, light effects, colorful
+INSERT INTO furniture_tags (furniture_id, tag_id)
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('boho', 'romantic', 'light-fx', 'colorful')
+WHERE f.name = 'Fairy Lights Bed'
+ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
+
+-- Fancy wooden bed: classic, luxury, wood, large
+INSERT INTO furniture_tags (furniture_id, tag_id)
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('classic', 'luxury', 'wood', 'large')
+WHERE f.name = 'Fancy Wooden Double Bed'
+ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
+
+-- Hospital beds: industrial, gritty, metal, medical theme
+INSERT INTO furniture_tags (furniture_id, tag_id)
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('industrial', 'gritty', 'metal', 'medical')
+WHERE f.name IN ('Hospital Bed Blue', 'Hospital Bed Green')
+ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
+
+-- Iron beds: industrial, gritty, metal, compact/medium
+INSERT INTO furniture_tags (furniture_id, tag_id)
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('industrial', 'gritty', 'metal', 'medium')
+WHERE f.name = 'Iron Double Bed'
+ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
+
+INSERT INTO furniture_tags (furniture_id, tag_id)
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('industrial', 'gritty', 'metal', 'compact')
+WHERE f.name = 'Iron Single Bed'
+ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
+
+-- Lamps: vintage/modern, cozy, light-fx, glowing
+INSERT INTO furniture_tags (furniture_id, tag_id)
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('vintage', 'cozy', 'light-fx', 'glowing')
+WHERE f.name = 'Worn Cream Desk Lamp'
+ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
+
+INSERT INTO furniture_tags (furniture_id, tag_id)
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('modern', 'minimalist', 'light-fx', 'bright')
+WHERE f.name = 'White Modern Table Lamp'
+ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
+
+INSERT INTO furniture_tags (furniture_id, tag_id)
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('classic', 'luxury', 'light-fx')
+WHERE f.name = 'Victorian Justice Lamp'
+ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
+
+INSERT INTO furniture_tags (furniture_id, tag_id)
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('industrial', 'light-fx', 'professional')
+WHERE f.name = 'Standing Photoshoot Lights'
+ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
+
+INSERT INTO furniture_tags (furniture_id, tag_id)
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('industrial', 'light-fx', 'street-style')
+WHERE f.name = 'Road Construction Light'
+ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
+
+-- Cabinets: wood storage, professional/office
+INSERT INTO furniture_tags (furniture_id, tag_id)
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('modern', 'wood', 'medium', 'professional')
+WHERE f.name = 'Low Wooden Cabinet'
+ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
+
+INSERT INTO furniture_tags (furniture_id, tag_id)
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('classic', 'wood', 'large', 'professional')
+WHERE f.name = 'Tall Wooden Cabinet'
+ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
+
+INSERT INTO furniture_tags (furniture_id, tag_id)
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('professional', 'industrial', 'metal')
+WHERE f.name = 'Tall Grey Filing Cabinet'
+ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
+
+-- Electronics: modern, professional
+INSERT INTO furniture_tags (furniture_id, tag_id)
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('modern', 'professional', 'dark-tone')
+WHERE f.name = 'Laptop 3'
+ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
+
+-- Bathroom fixtures: modern, industrial, metal, water effects
+INSERT INTO furniture_tags (furniture_id, tag_id)
+SELECT f.id, t.id
+FROM furniture f
+JOIN tags t ON t.slug IN ('modern', 'industrial', 'metal', 'water-fx')
+WHERE f.name IN ('Modern Metal Toilet', 'Modern Metal Urinal', 'Showerhead Advanced')
 ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
 
