@@ -897,3 +897,181 @@
     }
 }
 
+/* ============================================
+   TWO-COLUMN FORM LAYOUT
+   ============================================ */
+.admin-form.two-column {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-xl);
+    max-width: 1100px !important;
+}
+
+.admin-form.two-column .form-column-left,
+.admin-form.two-column .form-column-right {
+    display: flex;
+    flex-direction: column;
+    min-width: 0; /* Prevent grid blowout */
+}
+
+.admin-form.two-column .form-column-right {
+    background: var(--bg-elevated);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-lg);
+    max-height: 650px;
+    overflow-y: auto;
+}
+
+.admin-form.two-column .tags-column-label {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: var(--spacing-md);
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: var(--spacing-sm);
+    display: block;
+}
+
+@media (max-width: 900px) {
+    .admin-form.two-column {
+        grid-template-columns: 1fr !important;
+    }
+    
+    .admin-form.two-column .form-column-right {
+        max-height: none;
+    }
+}
+
+/* ============================================
+   TAG GROUP SECTIONS (Admin Form)
+   ============================================ */
+.admin-form .tag-group-section {
+    margin-bottom: var(--spacing-md);
+}
+
+.admin-form .tag-group-section:last-child {
+    margin-bottom: 0;
+}
+
+.admin-form .tag-group-section h4 {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0 0 var(--spacing-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.admin-form .group-color-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.admin-form .tag-group-section .checkbox-group {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-xs);
+}
+
+.admin-form .tag-group-section .checkbox-item {
+    font-size: 0.75rem;
+    padding: 4px 8px;
+    margin: 0;
+}
+
+.admin-form .tag-group-section .checkbox-item input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+}
+
+/* ============================================
+   IMAGE PREVIEW
+   ============================================ */
+.image-preview {
+    margin-top: var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--bg-elevated);
+    max-width: 200px;
+}
+
+.image-preview img {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+    object-fit: contain;
+}
+
+/* ============================================
+   COLOR INPUT WRAPPER
+   ============================================ */
+.color-input-wrapper {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: center;
+}
+
+.color-input-wrapper input[type="color"] {
+    width: 50px;
+    height: 40px;
+    padding: 2px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    background: none;
+}
+
+.color-input-wrapper input[type="text"] {
+    flex: 1;
+    max-width: 120px;
+    font-family: 'Monaco', 'Consolas', monospace;
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+.text-muted {
+    color: var(--text-muted);
+}
+
+.color-preview {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    vertical-align: middle;
+}
+
+/* Drag handle styling for tag groups */
+.data-table .drag-handle {
+    cursor: grab;
+    color: var(--text-muted);
+    font-size: 1rem;
+    user-select: none;
+}
+
+.data-table .drag-handle:hover {
+    color: var(--text-secondary);
+}
+
+.data-table tr.dragging .drag-handle {
+    cursor: grabbing;
+    color: var(--primary);
+}
+
+/* Empty state */
+.data-table .empty {
+    text-align: center;
+    padding: var(--spacing-xl) !important;
+    color: var(--text-muted);
+}
+
