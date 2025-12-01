@@ -32,10 +32,17 @@ const App = {
         },
         user: null,
         loading: false,
+        searching: false,
         lightbox: {
             isOpen: false,
             currentIndex: -1
         }
+    },
+
+    // Cache settings (TTL in milliseconds)
+    cacheConfig: {
+        categories: { key: 'gtaw_categories', ttl: 5 * 60 * 1000 }, // 5 minutes
+        tags: { key: 'gtaw_tags', ttl: 5 * 60 * 1000 }
     },
 
     // DOM element cache
@@ -46,8 +53,10 @@ const App = {
      */
     async init() {
         this.cacheElements();
+        this.initTheme();
         this.bindEvents();
         this.bindLightboxEvents();
+        this.showSkeletonLoading();
 
         // Parse URL parameters first (before loading data)
         this.parseUrlParams();
@@ -64,12 +73,62 @@ const App = {
     },
 
     /**
+     * Initialize theme from localStorage or system preference
+     */
+    initTheme() {
+        const saved = localStorage.getItem('gtaw_theme');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const theme = saved || (prefersDark ? 'dark' : 'dark'); // Default to dark
+        document.documentElement.setAttribute('data-theme', theme);
+    },
+
+    /**
+     * Toggle between light and dark themes
+     */
+    toggleTheme() {
+        const current = document.documentElement.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('gtaw_theme', next);
+        this.toast(`Switched to ${next} mode`, 'info');
+    },
+
+    /**
+     * Show skeleton loading cards
+     */
+    showSkeletonLoading() {
+        if (!this.elements.grid) return;
+        
+        const skeletonCount = 12;
+        const skeletons = Array(skeletonCount).fill(0).map(() => `
+            <div class="skeleton-card">
+                <div class="skeleton-image skeleton"></div>
+                <div class="skeleton-body">
+                    <div class="skeleton-title skeleton"></div>
+                    <div class="skeleton-meta skeleton"></div>
+                    <div class="skeleton-tags">
+                        <div class="skeleton-tag skeleton"></div>
+                        <div class="skeleton-tag skeleton"></div>
+                    </div>
+                    <div class="skeleton-actions">
+                        <div class="skeleton-btn skeleton"></div>
+                        <div class="skeleton-btn-small skeleton"></div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        
+        this.elements.grid.innerHTML = skeletons;
+    },
+
+    /**
      * Cache frequently accessed DOM elements
      */
     cacheElements() {
         this.elements = {
             grid: document.getElementById('furniture-grid'),
             searchInput: document.getElementById('search-input'),
+            searchContainer: document.querySelector('.search-container'),
             categorySelect: document.getElementById('category-filter'),
             sortSelect: document.getElementById('sort-filter'),
             tagFilters: document.getElementById('tag-filters'),
@@ -78,12 +137,17 @@ const App = {
             userInfo: document.getElementById('user-info'),
             loadingOverlay: document.getElementById('loading'),
             toastContainer: document.getElementById('toast-container'),
+            themeToggle: document.getElementById('theme-toggle'),
+            exportFavorites: document.getElementById('export-favorites'),
             // Lightbox elements
             lightbox: document.getElementById('lightbox'),
             lightboxImage: document.getElementById('lightbox-image'),
             lightboxTitle: document.getElementById('lightbox-title'),
             lightboxMeta: document.getElementById('lightbox-meta'),
             lightboxCopy: document.getElementById('lightbox-copy'),
+            lightboxFavorite: document.getElementById('lightbox-favorite'),
+            lightboxEdit: document.getElementById('lightbox-edit'),
+            lightboxShare: document.getElementById('lightbox-share'),
             lightboxClose: document.querySelector('.lightbox-close'),
             lightboxPrev: document.querySelector('.lightbox-nav.prev'),
             lightboxNext: document.querySelector('.lightbox-nav.next')
@@ -94,16 +158,31 @@ const App = {
      * Bind event listeners
      */
     bindEvents() {
-        // Search with debounce
+        // Search with debounce and visual feedback
         let searchTimeout;
         this.elements.searchInput?.addEventListener('input', (e) => {
             clearTimeout(searchTimeout);
+            
+            // Show searching state
+            this.elements.searchContainer?.classList.add('searching');
+            
             searchTimeout = setTimeout(() => {
+                this.elements.searchContainer?.classList.remove('searching');
                 this.state.filters.search = e.target.value.trim();
                 this.state.pagination.page = 1;
                 this.loadFurniture();
                 this.updateUrl();
             }, 300);
+        });
+
+        // Theme toggle
+        this.elements.themeToggle?.addEventListener('click', () => {
+            this.toggleTheme();
+        });
+
+        // Export favorites
+        this.elements.exportFavorites?.addEventListener('click', () => {
+            this.exportFavorites();
         });
 
         // Category filter
@@ -169,6 +248,22 @@ const App = {
                 } else if (e.key === 'ArrowRight') {
                     e.preventDefault();
                     this.lightboxNext();
+                } else if (e.key === 'c' || e.key === 'C') {
+                    // Copy command from lightbox
+                    const name = this.elements.lightboxCopy?.dataset.name;
+                    if (name) this.copyCommand(name);
+                }
+            }
+
+            // Grid navigation with arrow keys
+            if (!this.isInputFocused() && !this.state.lightbox.isOpen) {
+                const focused = document.activeElement;
+                const card = focused?.closest('.furniture-card');
+                
+                if (card && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || 
+                    e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+                    e.preventDefault();
+                    this.navigateGrid(card, e.key);
                 }
             }
         });
@@ -271,6 +366,28 @@ const App = {
             }
         });
 
+        // Favorite button in lightbox
+        this.elements.lightboxFavorite?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const furnitureId = parseInt(this.elements.lightboxFavorite.dataset.id, 10);
+            if (furnitureId) {
+                this.toggleFavorite(furnitureId);
+                this.updateLightboxFavoriteButton(furnitureId);
+            }
+        });
+
+        // Edit button in lightbox (prevent default, just set href dynamically)
+        this.elements.lightboxEdit?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Link will navigate naturally via href
+        });
+
+        // Share button in lightbox
+        this.elements.lightboxShare?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.shareFurniture();
+        });
+
         // Prevent clicks on content from closing
         this.elements.lightbox?.querySelector('.lightbox-content')?.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -283,6 +400,42 @@ const App = {
     isInputFocused() {
         const active = document.activeElement;
         return active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
+    },
+
+    /**
+     * Navigate grid using arrow keys
+     */
+    navigateGrid(currentCard, direction) {
+        const cards = Array.from(this.elements.grid?.querySelectorAll('.furniture-card') || []);
+        const currentIndex = cards.indexOf(currentCard);
+        if (currentIndex === -1) return;
+
+        // Calculate grid columns
+        const gridStyle = window.getComputedStyle(this.elements.grid);
+        const columns = gridStyle.gridTemplateColumns.split(' ').length;
+
+        let nextIndex;
+        switch (direction) {
+            case 'ArrowLeft':
+                nextIndex = currentIndex > 0 ? currentIndex - 1 : currentIndex;
+                break;
+            case 'ArrowRight':
+                nextIndex = currentIndex < cards.length - 1 ? currentIndex + 1 : currentIndex;
+                break;
+            case 'ArrowUp':
+                nextIndex = currentIndex >= columns ? currentIndex - columns : currentIndex;
+                break;
+            case 'ArrowDown':
+                nextIndex = currentIndex + columns < cards.length ? currentIndex + columns : currentIndex;
+                break;
+            default:
+                return;
+        }
+
+        if (nextIndex !== currentIndex && cards[nextIndex]) {
+            cards[nextIndex].focus();
+            cards[nextIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
     },
 
     /**
@@ -322,12 +475,57 @@ const App = {
     },
 
     /**
-     * Load categories for filter dropdown
+     * Get cached data or fetch fresh
+     */
+    getCached(key) {
+        try {
+            const cached = localStorage.getItem(key);
+            if (!cached) return null;
+            
+            const { data, timestamp, ttl } = JSON.parse(cached);
+            if (Date.now() - timestamp > ttl) {
+                localStorage.removeItem(key);
+                return null;
+            }
+            return data;
+        } catch {
+            return null;
+        }
+    },
+
+    /**
+     * Set cached data with TTL
+     */
+    setCache(key, data, ttl) {
+        try {
+            localStorage.setItem(key, JSON.stringify({
+                data,
+                timestamp: Date.now(),
+                ttl
+            }));
+        } catch {
+            // Storage quota exceeded or disabled
+        }
+    },
+
+    /**
+     * Load categories for filter dropdown (with caching)
      */
     async loadCategories() {
         try {
+            const { key, ttl } = this.cacheConfig.categories;
+            
+            // Try cache first
+            const cached = this.getCached(key);
+            if (cached) {
+                this.state.categories = cached;
+                this.renderCategoryFilter();
+                return;
+            }
+            
             const { data } = await this.api('categories');
             this.state.categories = data;
+            this.setCache(key, data, ttl);
             this.renderCategoryFilter();
         } catch (error) {
             console.error('Failed to load categories:', error);
@@ -335,12 +533,23 @@ const App = {
     },
 
     /**
-     * Load tags for filter
+     * Load tags for filter (with caching)
      */
     async loadTags() {
         try {
+            const { key, ttl } = this.cacheConfig.tags;
+            
+            // Try cache first
+            const cached = this.getCached(key);
+            if (cached) {
+                this.state.tags = cached;
+                this.renderTagFilters();
+                return;
+            }
+            
             const { data } = await this.api('tags');
             this.state.tags = data;
+            this.setCache(key, data, ttl);
             this.renderTagFilters();
         } catch (error) {
             console.error('Failed to load tags:', error);
@@ -380,6 +589,9 @@ const App = {
      */
     async loadFurniture() {
         this.setLoading(true);
+        
+        // Add loading class to grid for transition effect
+        this.elements.grid?.classList.add('loading');
 
         try {
             const action = this.state.filters.search ? 'furniture/search' : 'furniture';
@@ -407,6 +619,10 @@ const App = {
             this.toast('Failed to load furniture', 'error');
         } finally {
             this.setLoading(false);
+            // Remove loading class after a brief delay for smooth transition
+            setTimeout(() => {
+                this.elements.grid?.classList.remove('loading');
+            }, 50);
         }
     },
 
@@ -475,12 +691,21 @@ const App = {
      * Update a single favorite button without re-rendering
      */
     updateFavoriteButton(furnitureId) {
+        // Update card button
         const btn = this.elements.grid?.querySelector(`.btn-favorite[data-id="${furnitureId}"]`);
         if (btn) {
             const isFav = this.state.favorites.has(furnitureId);
             btn.classList.toggle('active', isFav);
             btn.innerHTML = isFav ? '❤️' : '🤍';
             btn.setAttribute('title', isFav ? 'Remove from favorites' : 'Add to favorites');
+        }
+        
+        // Also update lightbox button if open and showing this item
+        if (this.state.lightbox.isOpen) {
+            const currentItem = this.state.furniture[this.state.lightbox.currentIndex];
+            if (currentItem && currentItem.id === furnitureId) {
+                this.updateLightboxFavoriteButton(furnitureId);
+            }
         }
     },
 
@@ -569,12 +794,96 @@ const App = {
             this.elements.lightboxCopy.dataset.name = item.name;
         }
 
+        // Update favorite button
+        if (this.elements.lightboxFavorite) {
+            this.elements.lightboxFavorite.dataset.id = item.id;
+            this.updateLightboxFavoriteButton(item.id);
+        }
+
+        // Update edit button link
+        if (this.elements.lightboxEdit) {
+            this.elements.lightboxEdit.href = `/admin/?page=furniture&action=edit&id=${item.id}`;
+        }
+
         // Update navigation buttons
         if (this.elements.lightboxPrev) {
             this.elements.lightboxPrev.disabled = index === 0;
         }
         if (this.elements.lightboxNext) {
             this.elements.lightboxNext.disabled = index === this.state.furniture.length - 1;
+        }
+    },
+
+    /**
+     * Update lightbox favorite button state
+     */
+    updateLightboxFavoriteButton(furnitureId) {
+        if (!this.elements.lightboxFavorite) return;
+        
+        const isFav = this.state.favorites.has(furnitureId);
+        this.elements.lightboxFavorite.classList.toggle('active', isFav);
+        this.elements.lightboxFavorite.innerHTML = isFav ? '❤️' : '🤍';
+        this.elements.lightboxFavorite.setAttribute('title', isFav ? 'Remove from favorites' : 'Add to favorites');
+        this.elements.lightboxFavorite.setAttribute('aria-label', isFav ? 'Remove from favorites' : 'Add to favorites');
+    },
+
+    /**
+     * Share current furniture item (copy deep link)
+     */
+    async shareFurniture() {
+        const item = this.state.furniture[this.state.lightbox.currentIndex];
+        if (!item) return;
+
+        const url = new URL(window.location.origin);
+        url.searchParams.set('furniture', item.id);
+        
+        try {
+            await navigator.clipboard.writeText(url.toString());
+            this.toast('Link copied to clipboard!', 'success');
+        } catch {
+            // Fallback
+            const input = document.createElement('input');
+            input.value = url.toString();
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand('copy');
+            document.body.removeChild(input);
+            this.toast('Link copied to clipboard!', 'success');
+        }
+    },
+
+    /**
+     * Export favorites as text list
+     */
+    async exportFavorites() {
+        if (this.state.favorites.size === 0) {
+            this.toast('No favorites to export', 'info');
+            return;
+        }
+
+        try {
+            const { data } = await this.api('favorites');
+            const commands = data.map(f => `/sf ${f.name}`).join('\n');
+            
+            // Try to use clipboard
+            try {
+                await navigator.clipboard.writeText(commands);
+                this.toast(`${data.length} commands copied to clipboard!`, 'success');
+            } catch {
+                // Fallback: download as file
+                const blob = new Blob([commands], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'favorites.txt';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                this.toast('Favorites downloaded!', 'success');
+            }
+        } catch (error) {
+            this.toast('Failed to export favorites', 'error');
         }
     },
 
@@ -589,11 +898,20 @@ const App = {
         if (!this.elements.grid) return;
 
         if (this.state.furniture.length === 0) {
+            const hasFilters = this.state.filters.search || 
+                              this.state.filters.category || 
+                              this.state.filters.tags.length > 0;
+            
             this.elements.grid.innerHTML = `
                 <div class="empty-state">
-                    <div class="icon">🔍</div>
-                    <h3>No furniture found</h3>
-                    <p>Try adjusting your search or filters</p>
+                    <div class="icon">${hasFilters ? '🔍' : '🪑'}</div>
+                    <h3>${hasFilters ? 'No furniture found' : 'Welcome!'}</h3>
+                    <p>${hasFilters ? 'Try adjusting your search or filters' : 'Start browsing furniture items'}</p>
+                    ${hasFilters ? `
+                        <div class="suggestion">
+                            <button class="suggestion-btn" onclick="App.clearAllFilters()">Clear all filters</button>
+                        </div>
+                    ` : ''}
                 </div>
             `;
             this.renderPagination();
@@ -605,6 +923,49 @@ const App = {
             .join('');
 
         this.renderPagination();
+        
+        // Check for furniture param in URL (deep link)
+        this.handleDeepLink();
+    },
+
+    /**
+     * Handle deep link to specific furniture
+     */
+    handleDeepLink() {
+        const params = new URLSearchParams(window.location.search);
+        const furnitureId = params.get('furniture');
+        if (furnitureId) {
+            const id = parseInt(furnitureId, 10);
+            // Remove from URL to prevent re-opening
+            params.delete('furniture');
+            const newUrl = params.toString() ? `?${params}` : window.location.pathname;
+            window.history.replaceState({}, '', newUrl);
+            // Open lightbox
+            setTimeout(() => this.openLightbox(id), 100);
+        }
+    },
+
+    /**
+     * Clear all filters
+     */
+    clearAllFilters() {
+        this.state.filters = {
+            category: null,
+            tags: [],
+            search: '',
+            sort: 'name',
+            order: 'asc'
+        };
+        this.state.pagination.page = 1;
+        
+        // Reset UI
+        if (this.elements.searchInput) this.elements.searchInput.value = '';
+        if (this.elements.categorySelect) this.elements.categorySelect.value = '';
+        if (this.elements.sortSelect) this.elements.sortSelect.value = 'name-asc';
+        
+        this.renderTagFilters();
+        this.loadFurniture();
+        this.updateUrl();
     },
 
     /**
@@ -645,7 +1006,8 @@ const App = {
                             data-name="${this.escapeHtml(item.name)}"
                             title="Copy /sf command"
                         >
-                            📋
+                            <span class="btn-icon">📋</span>
+                            <span class="btn-text">Copy</span>
                         </button>
                         <button 
                             class="btn-favorite ${isFav ? 'active' : ''}" 
@@ -883,15 +1245,25 @@ const App = {
     },
 
     /**
-     * Show toast notification
+     * Show toast notification with icon
      */
     toast(message, type = 'info') {
         const container = this.elements.toastContainer;
         if (!container) return;
 
+        const icons = {
+            success: '✓',
+            error: '✕',
+            warning: '⚠',
+            info: 'ℹ'
+        };
+
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
-        toast.textContent = message;
+        toast.innerHTML = `
+            <span class="toast-icon">${icons[type] || icons.info}</span>
+            <span class="toast-message">${this.escapeHtml(message)}</span>
+        `;
         toast.setAttribute('role', 'alert');
 
         container.appendChild(toast);
