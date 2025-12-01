@@ -54,6 +54,45 @@ if ($pdo === null) {
 $method = requestMethod();
 $action = $_GET['action'] ?? '';
 
+/**
+ * Verify CSRF token for state-changing operations
+ * For JSON requests, token can be in the body or header
+ */
+function verifyRequestCsrf(): bool
+{
+    // Skip for GET requests (read-only)
+    if (requestMethod() === 'GET') {
+        return true;
+    }
+    
+    // Check for token in JSON body
+    $input = getJsonInput();
+    if ($input && isset($input['csrf_token'])) {
+        return verifyCsrfToken($input['csrf_token']);
+    }
+    
+    // Check for token in POST data
+    if (isset($_POST['csrf_token'])) {
+        return verifyCsrfToken($_POST['csrf_token']);
+    }
+    
+    // Check for token in header (for AJAX)
+    $headerToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
+    if ($headerToken) {
+        return verifyCsrfToken($headerToken);
+    }
+    
+    // For same-origin requests with SameSite=Lax cookies, 
+    // the session cookie provides CSRF protection
+    // But we'll still require token for maximum security
+    return false;
+}
+
+// Verify CSRF for all POST/DELETE requests
+if ($method !== 'GET' && !verifyRequestCsrf()) {
+    jsonError('Invalid or missing CSRF token', 403);
+}
+
 try {
     switch ($action) {
 
@@ -175,6 +214,29 @@ try {
             jsonSuccess(null, 'Furniture deleted successfully');
             break;
 
+        case 'furniture/batch-delete':
+            if ($method !== 'POST') {
+                jsonError('Method not allowed', 405);
+            }
+
+            $input = getJsonInput();
+            $ids = $input['ids'] ?? [];
+            
+            if (empty($ids) || !is_array($ids)) {
+                jsonError('No items selected');
+            }
+
+            $deleted = 0;
+            foreach ($ids as $id) {
+                $id = (int) $id;
+                if ($id > 0 && deleteFurniture($id)) {
+                    $deleted++;
+                }
+            }
+
+            jsonSuccess(['deleted' => $deleted], "{$deleted} items deleted successfully");
+            break;
+
         // =============================================
         // CATEGORY ENDPOINTS
         // =============================================
@@ -274,6 +336,29 @@ try {
             }
 
             jsonSuccess(null, 'Category deleted successfully');
+            break;
+
+        case 'categories/reorder':
+            if ($method !== 'POST') {
+                jsonError('Method not allowed', 405);
+            }
+
+            $input = getJsonInput();
+            $order = $input['order'] ?? [];
+            
+            if (empty($order) || !is_array($order)) {
+                jsonError('Invalid order data');
+            }
+
+            global $pdo;
+            $stmt = $pdo->prepare('UPDATE categories SET sort_order = ? WHERE id = ?');
+            
+            foreach ($order as $item) {
+                $stmt->execute([(int) $item['order'], (int) $item['id']]);
+            }
+
+            // Clear categories cache
+            jsonSuccess(null, 'Order saved successfully');
             break;
 
         // =============================================
