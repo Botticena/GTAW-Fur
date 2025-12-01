@@ -41,13 +41,13 @@ require_once __DIR__ . '/templates/header.php';
                 <input 
                     type="search" 
                     id="search-input" 
-                    placeholder="Search furniture..." 
+                    placeholder="Search furniture, categories, or tags..." 
                     aria-label="Search furniture"
                     autocomplete="off"
                 >
             </div>
             <p class="search-hint">
-                Press <kbd>/</kbd> to focus search • <kbd>C</kbd> to copy command
+                Press <kbd>/</kbd> to focus search • <kbd>C</kbd> to copy command • Click image to zoom
             </p>
         </div>
     </section>
@@ -74,9 +74,13 @@ require_once __DIR__ . '/templates/header.php';
                         <option value="newest-desc">Newest First</option>
                     </select>
                 </div>
-                
-                <div id="active-tags" class="active-tags">
-                    <!-- Active tag filters shown here -->
+            </div>
+            
+            <!-- Tag Filters -->
+            <div class="filters" style="margin-top: var(--spacing-sm);">
+                <span class="tag-filters-label">Tags:</span>
+                <div id="tag-filters" class="tag-filters" aria-label="Filter by tags">
+                    <!-- Populated by JavaScript -->
                 </div>
             </div>
         </div>
