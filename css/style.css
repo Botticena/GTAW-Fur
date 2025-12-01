@@ -382,30 +382,7 @@ main {
     border-color: var(--primary);
 }
 
-.active-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--spacing-xs);
-}
-
-.tag-filter {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-xs);
-    padding: var(--spacing-xs) var(--spacing-sm);
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-full);
-    font-size: 0.75rem;
-    color: var(--text-primary);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-}
-
-.tag-filter:hover {
-    border-color: var(--primary);
-}
-
+/* Old tag-filter styles - keeping for backwards compatibility with other uses */
 .tag-filter.active {
     background: var(--primary);
     border-color: var(--primary);
@@ -519,7 +496,7 @@ main {
 }
 
 .furniture-card .card-body {
-    padding: var(--spacing-sm) var(--spacing-md) var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-sm);
     display: flex;
     flex-direction: column;
     flex: 1;
@@ -561,11 +538,12 @@ main {
 
 .furniture-card .tags {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: var(--spacing-xs);
     margin-bottom: var(--spacing-sm);
     min-height: 1.25rem;
     flex: 1;
+    overflow: hidden;
 }
 
 .furniture-card .tag {
@@ -578,6 +556,21 @@ main {
     color: white;
     text-transform: lowercase;
     line-height: 1.2;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.furniture-card .tag-more {
+    display: inline-block;
+    padding: 2px 6px;
+    background: var(--bg-elevated);
+    border-radius: var(--radius-full);
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    line-height: 1.2;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .furniture-card .actions {
@@ -1388,92 +1381,7 @@ select:focus-visible {
     border-color: var(--border-color);
 }
 
-/* ============================================
-   TAG FILTERS
-   ============================================ */
-.tag-filters {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--spacing-xs);
-    align-items: center;
-}
-
-.tag-filter-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-xs);
-    padding: var(--spacing-xs) var(--spacing-sm);
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-full);
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--text-primary);
-    cursor: pointer;
-    transition: all var(--transition-fast), transform 0.1s ease;
-    white-space: nowrap;
-}
-
-.tag-filter-btn:hover {
-    border-color: var(--tag-color, var(--primary));
-    background: color-mix(in srgb, var(--tag-color, var(--primary)) 15%, transparent);
-}
-
-.tag-filter-btn:active {
-    transform: scale(0.95);
-}
-
-.tag-filter-btn.active {
-    background: var(--tag-color, var(--primary));
-    border-color: var(--tag-color, var(--primary));
-    color: white;
-    animation: tagPulse 0.2s ease;
-}
-
-@keyframes tagPulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.08); }
-    100% { transform: scale(1); }
-}
-
-.tag-filter-btn .tag-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--tag-color, var(--text-muted));
-    transition: background var(--transition-fast);
-}
-
-.tag-filter-btn.active .tag-dot {
-    background: white;
-}
-
-.tag-filters-label {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    margin-right: var(--spacing-xs);
-    display: flex;
-    align-items: center;
-    height: 28px;
-}
-
-.tag-filters-clear {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: var(--spacing-xs);
-    transition: color var(--transition-fast), transform var(--transition-fast);
-}
-
-.tag-filters-clear:hover {
-    color: var(--error);
-}
-
-.tag-filters-clear:active {
-    transform: scale(0.95);
-}
+/* Old flat tag filters section removed - now using grouped tag filters below */
 
 /* ============================================
    UTILITIES
@@ -1535,17 +1443,283 @@ select:focus-visible {
     .lightbox-info h3 {
         font-size: 1rem;
     }
-    
-    .tag-filters {
-        max-width: 100%;
-        overflow-x: auto;
-        flex-wrap: nowrap;
-        padding-bottom: var(--spacing-xs);
-        -webkit-overflow-scrolling: touch;
+}
+
+/* ============================================
+   GROUPED TAG FILTERS (Dropdown Style)
+   ============================================ */
+.tag-filters-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-md);
+    align-items: flex-start;
+}
+
+/* Dropdown trigger - looks like Category/Sort selects */
+.tag-group-dropdown {
+    position: relative;
+}
+
+.tag-group-trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    user-select: none;
+    min-width: 140px;
+    transition: all var(--transition-fast);
+}
+
+.tag-group-trigger:hover {
+    border-color: var(--primary);
+}
+
+.tag-group-dropdown.open .tag-group-trigger {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-focus);
+}
+
+.tag-group-trigger .group-color {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.tag-group-trigger .group-name {
+    flex: 1;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tag-group-trigger .group-count {
+    font-size: 0.7rem;
+    color: white;
+    background: var(--primary);
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+    min-width: 18px;
+    text-align: center;
+}
+
+.tag-group-trigger .group-arrow {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    transition: transform var(--transition-fast);
+}
+
+.tag-group-dropdown.open .group-arrow {
+    transform: rotate(180deg);
+}
+
+/* Dropdown panel */
+.tag-group-panel {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 200px;
+    max-width: 280px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    z-index: 100;
+    display: none;
+    animation: dropdownFadeIn 0.15s ease;
+}
+
+@keyframes dropdownFadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.tag-group-dropdown.open .tag-group-panel {
+    display: block;
+}
+
+.tag-group-panel-header {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tag-group-panel-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.tag-group-panel-clear {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 6px;
+}
+
+.tag-group-panel-clear:hover {
+    color: var(--error);
+}
+
+.tag-group-tags {
+    display: flex;
+    flex-direction: column;
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.tag-checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-xs) var(--spacing-md);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.tag-checkbox-item:hover {
+    background: var(--bg-elevated);
+}
+
+.tag-checkbox-item input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--tag-color, var(--primary));
+    cursor: pointer;
+}
+
+.tag-checkbox-item .tag-name {
+    flex: 1;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.tag-checkbox-item .tag-color-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--tag-color, var(--text-muted));
+}
+
+/* Responsive tag dropdowns */
+@media (max-width: 768px) {
+    .tag-filters-container {
+        flex-direction: column;
+        gap: var(--spacing-xs);
     }
     
-    .tag-filter-btn {
-        flex-shrink: 0;
+    .tag-group-dropdown {
+        width: 100%;
+    }
+    
+    .tag-group-trigger {
+        width: 100%;
+    }
+    
+    .tag-group-panel {
+        width: 100%;
+        max-width: none;
+    }
+}
+
+/* Active Tags Bar */
+.active-tags {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--bg-elevated);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+}
+
+.active-tags-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.active-tags-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+}
+
+.active-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: 3px 8px;
+    background: var(--tag-color, var(--primary));
+    color: white;
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.active-tag .remove-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 0.65rem;
+    line-height: 1;
+    transition: background var(--transition-fast);
+}
+
+.active-tag .remove-tag:hover {
+    background: rgba(255, 255, 255, 0.5);
+}
+
+/* Clear Filters Button */
+.btn-clear-filters {
+    padding: var(--spacing-xs) var(--spacing-md);
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-clear-filters:hover {
+    background: var(--error);
+    border-color: var(--error);
+    color: white;
+}
+
+/* Responsive Grouped Tags */
+@media (max-width: 768px) {
+    .tag-filters-container {
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+    
+    .tag-group-filter {
+        max-width: 100%;
+    }
+    
+    .tag-group-tags {
+        max-height: 150px;
     }
 }
 
