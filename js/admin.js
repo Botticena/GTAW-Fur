@@ -22,6 +22,9 @@ const Admin = {
         this.initForms();
         this.initBatchOperations();
         this.initDragAndDrop();
+        this.initImagePreview();
+        this.initColorInputs();
+        this.initDeleteButtons();
     },
 
     /**
@@ -180,7 +183,8 @@ const Admin = {
             const tbody = table.querySelector('tbody');
             if (!tbody) return;
 
-            const type = table.dataset.sortable;
+            const type = table.dataset.sortable || '';
+            const reorderUrl = table.dataset.reorderUrl || null;
             let draggedRow = null;
 
             tbody.querySelectorAll('tr').forEach(row => {
@@ -225,11 +229,53 @@ const Admin = {
                             tbody.insertBefore(draggedRow, row.nextSibling);
                         }
                         
-                        this.showOrderChanged(type);
+                        // If we have a direct reorder URL, save immediately
+                        if (reorderUrl) {
+                            this.saveOrderDirect(table, reorderUrl);
+                        } else if (type) {
+                            this.showOrderChanged(type);
+                        }
                     }
                 });
             });
         });
+    },
+
+    /**
+     * Save order directly via URL (for tag groups etc.)
+     */
+    async saveOrderDirect(table, url) {
+        const rows = table.querySelectorAll('tbody tr');
+        const order = Array.from(rows).map((row, index) => ({
+            id: parseInt(row.dataset.id),
+            order: index + 1
+        }));
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': this.csrfToken || ''
+                },
+                body: JSON.stringify({ 
+                    order,
+                    csrf_token: this.csrfToken 
+                }),
+                credentials: 'same-origin'
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.toast('Order saved', 'success');
+            } else {
+                this.toast(result.error || 'Failed to save order', 'error');
+            }
+        } catch (error) {
+            console.error('Reorder error:', error);
+            this.toast('Network error. Please try again.', 'error');
+        }
     },
 
     /**
@@ -610,6 +656,135 @@ const Admin = {
         container.setAttribute('aria-live', 'polite');
         document.body.appendChild(container);
         return container;
+    },
+
+    /**
+     * Initialize live image preview for URL inputs
+     */
+    initImagePreview() {
+        const imageUrlInput = document.getElementById('image_url');
+        const previewImg = document.getElementById('preview-img');
+        
+        if (!imageUrlInput || !previewImg) return;
+        
+        // Debounce timer
+        let debounceTimer = null;
+        
+        const updatePreview = (url) => {
+            if (!url) {
+                previewImg.src = '/images/placeholder.svg';
+                return;
+            }
+            
+            // Handle relative paths
+            if (url.startsWith('/')) {
+                previewImg.src = url;
+            } else if (url.startsWith('http://') || url.startsWith('https://')) {
+                previewImg.src = url;
+            } else {
+                previewImg.src = '/images/placeholder.svg';
+            }
+        };
+        
+        imageUrlInput.addEventListener('input', (e) => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                updatePreview(e.target.value.trim());
+            }, 300);
+        });
+        
+        // Handle image load errors
+        previewImg.addEventListener('error', () => {
+            previewImg.src = '/images/placeholder.svg';
+        });
+    },
+
+    /**
+     * Initialize color input sync (color picker + text input)
+     */
+    initColorInputs() {
+        const colorInput = document.getElementById('color');
+        const colorText = document.getElementById('color_text');
+        
+        if (!colorInput || !colorText) return;
+        
+        // Sync color picker to text input
+        colorInput.addEventListener('input', (e) => {
+            colorText.value = e.target.value.toUpperCase();
+        });
+        
+        // Sync text input to color picker
+        colorText.addEventListener('input', (e) => {
+            let value = e.target.value.trim();
+            
+            // Add # if missing
+            if (!value.startsWith('#')) {
+                value = '#' + value;
+            }
+            
+            // Validate hex color
+            if (/^#[0-9A-Fa-f]{6}$/.test(value)) {
+                colorInput.value = value;
+                colorText.value = value.toUpperCase();
+            }
+        });
+        
+        // Format on blur
+        colorText.addEventListener('blur', (e) => {
+            let value = e.target.value.trim();
+            if (!value.startsWith('#')) {
+                value = '#' + value;
+            }
+            if (/^#[0-9A-Fa-f]{6}$/i.test(value)) {
+                colorText.value = value.toUpperCase();
+            } else {
+                // Reset to color picker value if invalid
+                colorText.value = colorInput.value.toUpperCase();
+            }
+        });
+    },
+
+    /**
+     * Initialize data-delete buttons (for inline delete actions)
+     */
+    initDeleteButtons() {
+        document.querySelectorAll('[data-delete]').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                
+                const url = btn.dataset.url;
+                const csrf = btn.dataset.csrf || this.csrfToken;
+                const confirmMsg = btn.dataset.confirm || 'Are you sure you want to delete this item?';
+                
+                if (!confirm(confirmMsg)) return;
+                
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-Token': csrf
+                        },
+                        body: JSON.stringify({ csrf_token: csrf }),
+                        credentials: 'same-origin'
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        this.toast(result.message || 'Deleted successfully', 'success');
+                        // Remove the row
+                        const row = btn.closest('tr');
+                        if (row) row.remove();
+                    } else {
+                        this.toast(result.error || 'Failed to delete', 'error');
+                    }
+                } catch (error) {
+                    console.error('Delete error:', error);
+                    this.toast('Network error. Please try again.', 'error');
+                }
+            });
+        });
     },
 
     /**
