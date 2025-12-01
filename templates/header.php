@@ -28,6 +28,13 @@ $pageTitle = isset($pageTitle) ? "{$pageTitle} - {$appName}" : $appName;
     
     <title><?= e($pageTitle) ?></title>
     
+    <!-- CSRF Token -->
+    <meta name="csrf-token" content="<?= e(generateCsrfToken()) ?>">
+    
+    <!-- Preconnect for external resources -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+    
     <!-- Pico CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
     
@@ -36,6 +43,14 @@ $pageTitle = isset($pageTitle) ? "{$pageTitle} - {$appName}" : $appName;
     
     <!-- Favicon -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪑</text></svg>">
+    
+    <!-- Inline critical theme script to prevent flash -->
+    <script>
+        (function() {
+            const theme = localStorage.getItem('gtaw_theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
 </head>
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -48,7 +63,14 @@ $pageTitle = isset($pageTitle) ? "{$pageTitle} - {$appName}" : $appName;
             </a>
             
             <div class="header-actions">
+                <button class="theme-toggle" id="theme-toggle" title="Toggle theme" aria-label="Toggle dark/light theme">
+                    <span class="icon-sun">☀️</span>
+                    <span class="icon-moon">🌙</span>
+                </button>
                 <?php if ($currentUser): ?>
+                    <button class="export-favorites-btn" id="export-favorites" title="Export favorites">
+                        📥 Export
+                    </button>
                     <div class="user-info">
                         Welcome, <strong><?= e($currentUser['main_character'] ?? $currentUser['username']) ?></strong>
                         <a href="/logout.php" class="btn-logout">Logout</a>
