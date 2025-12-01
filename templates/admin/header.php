@@ -68,6 +68,12 @@ $pageTitle = isset($pageTitle) ? "{$pageTitle} - Admin" : "Admin - {$appName}";
                             Tags
                         </a>
                     </li>
+                    <li>
+                        <a href="/admin/?page=tag-groups" class="<?= $currentPage === 'tag-groups' ? 'active' : '' ?>">
+                            <span class="nav-icon">📂</span>
+                            Tag Groups
+                        </a>
+                    </li>
                     
                     <li class="admin-nav-divider"></li>
                     
