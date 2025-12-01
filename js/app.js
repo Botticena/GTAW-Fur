@@ -1,6 +1,13 @@
 /**
  * GTAW Furniture Catalog - Frontend Application
  * Vanilla JavaScript, no dependencies
+ * 
+ * Features:
+ * - Furniture browsing with search, filter, and sort
+ * - Image lightbox with navigation
+ * - Tag filtering
+ * - Favorites management
+ * - URL state persistence
  */
 
 const App = {
@@ -24,7 +31,11 @@ const App = {
             totalPages: 0
         },
         user: null,
-        loading: false
+        loading: false,
+        lightbox: {
+            isOpen: false,
+            currentIndex: -1
+        }
     },
 
     // DOM element cache
@@ -36,6 +47,10 @@ const App = {
     async init() {
         this.cacheElements();
         this.bindEvents();
+        this.bindLightboxEvents();
+
+        // Parse URL parameters first (before loading data)
+        this.parseUrlParams();
 
         // Load initial data in parallel
         await Promise.all([
@@ -44,8 +59,7 @@ const App = {
             this.checkAuth()
         ]);
 
-        // Parse URL parameters and load furniture
-        this.parseUrlParams();
+        // Load furniture with current filters
         await this.loadFurniture();
     },
 
@@ -58,12 +72,21 @@ const App = {
             searchInput: document.getElementById('search-input'),
             categorySelect: document.getElementById('category-filter'),
             sortSelect: document.getElementById('sort-filter'),
-            tagContainer: document.getElementById('active-tags'),
+            tagFilters: document.getElementById('tag-filters'),
             pagination: document.getElementById('pagination'),
             loginBtn: document.getElementById('login-btn'),
             userInfo: document.getElementById('user-info'),
             loadingOverlay: document.getElementById('loading'),
-            toastContainer: document.getElementById('toast-container')
+            toastContainer: document.getElementById('toast-container'),
+            // Lightbox elements
+            lightbox: document.getElementById('lightbox'),
+            lightboxImage: document.getElementById('lightbox-image'),
+            lightboxTitle: document.getElementById('lightbox-title'),
+            lightboxMeta: document.getElementById('lightbox-meta'),
+            lightboxCopy: document.getElementById('lightbox-copy'),
+            lightboxClose: document.querySelector('.lightbox-close'),
+            lightboxPrev: document.querySelector('.lightbox-nav.prev'),
+            lightboxNext: document.querySelector('.lightbox-nav.next')
         };
     },
 
@@ -96,20 +119,57 @@ const App = {
             const [sort, order] = e.target.value.split('-');
             this.state.filters.sort = sort || 'name';
             this.state.filters.order = order || 'asc';
+            this.state.pagination.page = 1;
             this.loadFurniture();
+            this.updateUrl();
+        });
+
+        // Tag filter clicks
+        this.elements.tagFilters?.addEventListener('click', (e) => {
+            const btn = e.target.closest('.tag-filter-btn');
+            if (!btn) return;
+            
+            const slug = btn.dataset.slug;
+            const index = this.state.filters.tags.indexOf(slug);
+            
+            if (index === -1) {
+                this.state.filters.tags.push(slug);
+            } else {
+                this.state.filters.tags.splice(index, 1);
+            }
+            
+            btn.classList.toggle('active');
+            this.state.pagination.page = 1;
+            this.loadFurniture();
+            this.updateUrl();
         });
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             // Press '/' to focus search
-            if (e.key === '/' && !this.isInputFocused()) {
+            if (e.key === '/' && !this.isInputFocused() && !this.state.lightbox.isOpen) {
                 e.preventDefault();
                 this.elements.searchInput?.focus();
             }
 
-            // Press Escape to blur search
-            if (e.key === 'Escape' && document.activeElement === this.elements.searchInput) {
-                this.elements.searchInput.blur();
+            // Press Escape to blur search or close lightbox
+            if (e.key === 'Escape') {
+                if (this.state.lightbox.isOpen) {
+                    this.closeLightbox();
+                } else if (document.activeElement === this.elements.searchInput) {
+                    this.elements.searchInput.blur();
+                }
+            }
+
+            // Lightbox navigation
+            if (this.state.lightbox.isOpen) {
+                if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    this.lightboxPrev();
+                } else if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    this.lightboxNext();
+                }
             }
         });
 
@@ -117,6 +177,7 @@ const App = {
         this.elements.grid?.addEventListener('click', (e) => {
             const copyBtn = e.target.closest('.btn-copy');
             const favBtn = e.target.closest('.btn-favorite');
+            const cardImage = e.target.closest('.card-image');
 
             if (copyBtn) {
                 e.preventDefault();
@@ -126,6 +187,12 @@ const App = {
                 e.preventDefault();
                 e.stopPropagation();
                 this.toggleFavorite(parseInt(favBtn.dataset.id, 10));
+            } else if (cardImage) {
+                const card = cardImage.closest('.furniture-card');
+                if (card) {
+                    e.preventDefault();
+                    this.openLightbox(parseInt(card.dataset.id, 10));
+                }
             }
         });
 
@@ -149,6 +216,64 @@ const App = {
                     this.toggleFavorite(id);
                 }
             }
+
+            // Press Enter or Space to open lightbox
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const id = parseInt(card.dataset.id, 10);
+                if (id) {
+                    this.openLightbox(id);
+                }
+            }
+        });
+
+        // Browser back/forward navigation
+        window.addEventListener('popstate', () => {
+            this.parseUrlParams();
+            this.loadFurniture();
+            this.syncFiltersToUI();
+        });
+    },
+
+    /**
+     * Bind lightbox-specific events
+     */
+    bindLightboxEvents() {
+        // Close button
+        this.elements.lightboxClose?.addEventListener('click', () => {
+            this.closeLightbox();
+        });
+
+        // Click outside to close
+        this.elements.lightbox?.addEventListener('click', (e) => {
+            if (e.target === this.elements.lightbox) {
+                this.closeLightbox();
+            }
+        });
+
+        // Navigation buttons
+        this.elements.lightboxPrev?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.lightboxPrev();
+        });
+
+        this.elements.lightboxNext?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.lightboxNext();
+        });
+
+        // Copy button in lightbox
+        this.elements.lightboxCopy?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const name = this.elements.lightboxCopy.dataset.name;
+            if (name) {
+                this.copyCommand(name);
+            }
+        });
+
+        // Prevent clicks on content from closing
+        this.elements.lightbox?.querySelector('.lightbox-content')?.addEventListener('click', (e) => {
+            e.stopPropagation();
         });
     },
 
@@ -216,6 +341,7 @@ const App = {
         try {
             const { data } = await this.api('tags');
             this.state.tags = data;
+            this.renderTagFilters();
         } catch (error) {
             console.error('Failed to load tags:', error);
         }
@@ -358,6 +484,104 @@ const App = {
         }
     },
 
+    // =========================================
+    // LIGHTBOX METHODS
+    // =========================================
+
+    /**
+     * Open lightbox for a furniture item
+     */
+    openLightbox(furnitureId) {
+        const index = this.state.furniture.findIndex(f => f.id === furnitureId);
+        if (index === -1) return;
+
+        this.state.lightbox.isOpen = true;
+        this.state.lightbox.currentIndex = index;
+        
+        this.updateLightboxContent();
+        
+        this.elements.lightbox?.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        
+        // Focus the lightbox for keyboard navigation
+        this.elements.lightbox?.focus();
+    },
+
+    /**
+     * Close lightbox
+     */
+    closeLightbox() {
+        this.state.lightbox.isOpen = false;
+        this.state.lightbox.currentIndex = -1;
+        
+        this.elements.lightbox?.classList.remove('active');
+        document.body.style.overflow = '';
+    },
+
+    /**
+     * Navigate to previous item in lightbox
+     */
+    lightboxPrev() {
+        if (this.state.lightbox.currentIndex > 0) {
+            this.state.lightbox.currentIndex--;
+            this.updateLightboxContent();
+        }
+    },
+
+    /**
+     * Navigate to next item in lightbox
+     */
+    lightboxNext() {
+        if (this.state.lightbox.currentIndex < this.state.furniture.length - 1) {
+            this.state.lightbox.currentIndex++;
+            this.updateLightboxContent();
+        }
+    },
+
+    /**
+     * Update lightbox content for current item
+     */
+    updateLightboxContent() {
+        const index = this.state.lightbox.currentIndex;
+        const item = this.state.furniture[index];
+        
+        if (!item) return;
+
+        // Update image
+        const imageUrl = item.image_url || '/images/placeholder.svg';
+        if (this.elements.lightboxImage) {
+            this.elements.lightboxImage.src = imageUrl;
+            this.elements.lightboxImage.alt = item.name;
+        }
+
+        // Update title
+        if (this.elements.lightboxTitle) {
+            this.elements.lightboxTitle.textContent = item.name;
+        }
+
+        // Update meta
+        if (this.elements.lightboxMeta) {
+            this.elements.lightboxMeta.textContent = `${item.category_name} • $${this.formatNumber(item.price)}`;
+        }
+
+        // Update copy button
+        if (this.elements.lightboxCopy) {
+            this.elements.lightboxCopy.dataset.name = item.name;
+        }
+
+        // Update navigation buttons
+        if (this.elements.lightboxPrev) {
+            this.elements.lightboxPrev.disabled = index === 0;
+        }
+        if (this.elements.lightboxNext) {
+            this.elements.lightboxNext.disabled = index === this.state.furniture.length - 1;
+        }
+    },
+
+    // =========================================
+    // RENDER METHODS
+    // =========================================
+
     /**
      * Render the furniture grid
      */
@@ -459,6 +683,46 @@ const App = {
     },
 
     /**
+     * Render tag filter buttons
+     */
+    renderTagFilters() {
+        if (!this.elements.tagFilters) return;
+
+        const buttons = this.state.tags.map(tag => {
+            const isActive = this.state.filters.tags.includes(tag.slug);
+            return `
+                <button 
+                    class="tag-filter-btn ${isActive ? 'active' : ''}"
+                    data-slug="${tag.slug}"
+                    style="--tag-color: ${tag.color}"
+                    title="Filter by ${this.escapeHtml(tag.name)}"
+                >
+                    <span class="tag-dot"></span>
+                    ${this.escapeHtml(tag.name)}
+                </button>
+            `;
+        });
+
+        // Add clear button if any tags are selected
+        const clearBtn = this.state.filters.tags.length > 0 
+            ? `<button class="tag-filters-clear" onclick="App.clearTagFilters()">Clear all</button>` 
+            : '';
+
+        this.elements.tagFilters.innerHTML = buttons.join('') + clearBtn;
+    },
+
+    /**
+     * Clear all tag filters
+     */
+    clearTagFilters() {
+        this.state.filters.tags = [];
+        this.state.pagination.page = 1;
+        this.renderTagFilters();
+        this.loadFurniture();
+        this.updateUrl();
+    },
+
+    /**
      * Render pagination controls
      */
     renderPagination() {
@@ -498,8 +762,114 @@ const App = {
     goToPage(page) {
         this.state.pagination.page = page;
         this.loadFurniture();
+        this.updateUrl();
         window.scrollTo({ top: 0, behavior: 'smooth' });
     },
+
+    // =========================================
+    // URL STATE MANAGEMENT
+    // =========================================
+
+    /**
+     * Parse URL parameters on page load
+     */
+    parseUrlParams() {
+        const params = new URLSearchParams(window.location.search);
+
+        // Category
+        if (params.has('category')) {
+            this.state.filters.category = params.get('category');
+        } else {
+            this.state.filters.category = null;
+        }
+
+        // Search
+        if (params.has('search')) {
+            this.state.filters.search = params.get('search');
+        } else {
+            this.state.filters.search = '';
+        }
+
+        // Tags
+        if (params.has('tags')) {
+            this.state.filters.tags = params.get('tags').split(',').filter(t => t);
+        } else {
+            this.state.filters.tags = [];
+        }
+
+        // Page
+        if (params.has('page')) {
+            this.state.pagination.page = Math.max(1, parseInt(params.get('page'), 10) || 1);
+        } else {
+            this.state.pagination.page = 1;
+        }
+
+        // Sort
+        if (params.has('sort')) {
+            const sortValue = params.get('sort');
+            const [sort, order] = sortValue.split('-');
+            this.state.filters.sort = sort || 'name';
+            this.state.filters.order = order || 'asc';
+        }
+    },
+
+    /**
+     * Sync UI elements to current filter state
+     */
+    syncFiltersToUI() {
+        // Category select
+        if (this.elements.categorySelect) {
+            this.elements.categorySelect.value = this.state.filters.category || '';
+        }
+
+        // Search input
+        if (this.elements.searchInput) {
+            this.elements.searchInput.value = this.state.filters.search || '';
+        }
+
+        // Sort select
+        if (this.elements.sortSelect) {
+            this.elements.sortSelect.value = `${this.state.filters.sort}-${this.state.filters.order}`;
+        }
+
+        // Tag filters
+        this.renderTagFilters();
+    },
+
+    /**
+     * Update URL with current filters (without reload)
+     */
+    updateUrl() {
+        const params = new URLSearchParams();
+
+        if (this.state.filters.category) {
+            params.set('category', this.state.filters.category);
+        }
+
+        if (this.state.filters.search) {
+            params.set('search', this.state.filters.search);
+        }
+
+        if (this.state.filters.tags.length > 0) {
+            params.set('tags', this.state.filters.tags.join(','));
+        }
+
+        if (this.state.pagination.page > 1) {
+            params.set('page', this.state.pagination.page.toString());
+        }
+
+        // Only include sort if not default
+        if (this.state.filters.sort !== 'name' || this.state.filters.order !== 'asc') {
+            params.set('sort', `${this.state.filters.sort}-${this.state.filters.order}`);
+        }
+
+        const url = params.toString() ? `?${params.toString()}` : window.location.pathname;
+        window.history.pushState({}, '', url);
+    },
+
+    // =========================================
+    // UTILITY METHODS
+    // =========================================
 
     /**
      * Show loading overlay
@@ -534,49 +904,6 @@ const App = {
     },
 
     /**
-     * Parse URL parameters on page load
-     */
-    parseUrlParams() {
-        const params = new URLSearchParams(window.location.search);
-
-        if (params.has('category')) {
-            this.state.filters.category = params.get('category');
-            if (this.elements.categorySelect) {
-                this.elements.categorySelect.value = params.get('category');
-            }
-        }
-
-        if (params.has('search')) {
-            this.state.filters.search = params.get('search');
-            if (this.elements.searchInput) {
-                this.elements.searchInput.value = params.get('search');
-            }
-        }
-
-        if (params.has('page')) {
-            this.state.pagination.page = Math.max(1, parseInt(params.get('page'), 10) || 1);
-        }
-    },
-
-    /**
-     * Update URL with current filters (without reload)
-     */
-    updateUrl() {
-        const params = new URLSearchParams();
-
-        if (this.state.filters.category) {
-            params.set('category', this.state.filters.category);
-        }
-
-        if (this.state.filters.search) {
-            params.set('search', this.state.filters.search);
-        }
-
-        const url = params.toString() ? `?${params.toString()}` : window.location.pathname;
-        window.history.replaceState({}, '', url);
-    },
-
-    /**
      * Format number with commas
      */
     formatNumber(num) {
@@ -600,4 +927,3 @@ if (document.readyState === 'loading') {
 } else {
     App.init();
 }
-
