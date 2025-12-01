@@ -109,7 +109,14 @@ function getFurnitureList(
 }
 
 /**
- * Search furniture by name
+ * Search furniture by name, category, and tags
+ * 
+ * Searches across:
+ * - Furniture name
+ * - Category name
+ * - Tag names
+ * 
+ * Results are ordered by relevance (name matches first, then category, then tags)
  */
 function searchFurniture(string $query, int $page = 1, int $perPage = 24): array
 {
@@ -123,26 +130,58 @@ function searchFurniture(string $query, int $page = 1, int $perPage = 24): array
     $page = max(1, $page);
     $offset = ($page - 1) * $perPage;
     
-    // Use LIKE for simple search (FULLTEXT requires minimum word length)
+    // Use LIKE for search across name, category, and tags
     $searchTerm = '%' . $query . '%';
     
-    // Count total
-    $stmt = $pdo->prepare('SELECT COUNT(*) FROM furniture WHERE name LIKE ?');
-    $stmt->execute([$searchTerm]);
-    $total = (int) $stmt->fetchColumn();
-    
-    // Get items
-    $stmt = $pdo->prepare('
-        SELECT f.id, f.name, f.category_id, f.price, f.image_url, f.created_at,
-               c.name as category_name, c.slug as category_slug
+    // Count total distinct furniture items matching the search
+    $countSql = '
+        SELECT COUNT(DISTINCT f.id) 
         FROM furniture f
         INNER JOIN categories c ON f.category_id = c.id
-        WHERE f.name LIKE ?
-        ORDER BY f.name ASC
+        LEFT JOIN furniture_tags ft ON f.id = ft.furniture_id
+        LEFT JOIN tags t ON ft.tag_id = t.id
+        WHERE f.name LIKE ? 
+           OR c.name LIKE ? 
+           OR t.name LIKE ?
+    ';
+    
+    $stmt = $pdo->prepare($countSql);
+    $stmt->execute([$searchTerm, $searchTerm, $searchTerm]);
+    $total = (int) $stmt->fetchColumn();
+    
+    // Get items with relevance ordering
+    // Name matches are most relevant, then category, then tags
+    $sql = '
+        SELECT DISTINCT f.id, f.name, f.category_id, f.price, f.image_url, f.created_at,
+               c.name as category_name, c.slug as category_slug,
+               CASE 
+                   WHEN f.name LIKE ? THEN 1
+                   WHEN c.name LIKE ? THEN 2
+                   ELSE 3
+               END as relevance
+        FROM furniture f
+        INNER JOIN categories c ON f.category_id = c.id
+        LEFT JOIN furniture_tags ft ON f.id = ft.furniture_id
+        LEFT JOIN tags t ON ft.tag_id = t.id
+        WHERE f.name LIKE ? 
+           OR c.name LIKE ? 
+           OR t.name LIKE ?
+        ORDER BY relevance ASC, f.name ASC
         LIMIT ? OFFSET ?
-    ');
-    $stmt->execute([$searchTerm, $perPage, $offset]);
+    ';
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([
+        $searchTerm, $searchTerm,           // For CASE statement
+        $searchTerm, $searchTerm, $searchTerm, // For WHERE clause
+        $perPage, $offset
+    ]);
     $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Remove relevance field from results (internal use only)
+    foreach ($items as &$item) {
+        unset($item['relevance']);
+    }
     
     $items = attachTagsToFurniture($items);
     
@@ -326,6 +365,21 @@ function deleteFurniture(int $id): bool
     
     $stmt = $pdo->prepare('DELETE FROM furniture WHERE id = ?');
     return $stmt->execute([$id]);
+}
+
+/**
+ * Update furniture image URL only
+ */
+function updateFurnitureImage(int $id, string $imageUrl): bool
+{
+    global $pdo;
+    
+    if ($pdo === null) {
+        return false;
+    }
+    
+    $stmt = $pdo->prepare('UPDATE furniture SET image_url = ? WHERE id = ?');
+    return $stmt->execute([$imageUrl, $id]);
 }
 
 /**
