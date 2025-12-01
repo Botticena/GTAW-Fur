@@ -62,6 +62,16 @@ switch ($page) {
         }
         break;
     
+    case 'tag-groups':
+        if ($action === 'edit' && $id > 0) {
+            renderTagGroupEdit($id);
+        } elseif ($action === 'add') {
+            renderTagGroupAdd();
+        } else {
+            renderTagGroupList();
+        }
+        break;
+    
     case 'tags':
         if ($action === 'edit' && $id > 0) {
             renderTagEdit($id);
@@ -168,6 +178,7 @@ function renderFurnitureList(): void
     $result = getFurnitureList($currentPage, 50);
     $items = $result['items'];
     $pagination = $result['pagination'];
+    $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
         <h1>🪑 Furniture</h1>
@@ -180,18 +191,18 @@ function renderFurnitureList(): void
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>ID</th>
+                    <th style="width: 60px">ID</th>
                     <th>Name</th>
                     <th>Category</th>
-                    <th>Price</th>
+                    <th style="width: 80px">Price</th>
                     <th>Tags</th>
-                    <th>Actions</th>
+                    <th style="width: 140px">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($items)): ?>
                 <tr>
-                    <td colspan="6" style="text-align: center; padding: 2rem;">No furniture items found</td>
+                    <td colspan="6" class="empty">No furniture items found</td>
                 </tr>
                 <?php else: ?>
                 <?php foreach ($items as $item): ?>
@@ -202,14 +213,20 @@ function renderFurnitureList(): void
                     <td>$<?= number_format($item['price']) ?></td>
                     <td>
                         <?php foreach (($item['tags'] ?? []) as $tag): ?>
-                            <span class="badge" style="background: <?= e($tag['color']) ?>20; color: <?= e($tag['color']) ?>">
+                            <span class="badge" style="background: <?= e($tag['color']) ?>">
                                 <?= e($tag['name']) ?>
                             </span>
                         <?php endforeach; ?>
                     </td>
                     <td class="actions">
                         <a href="/admin/?page=furniture&action=edit&id=<?= $item['id'] ?>" class="btn btn-sm">Edit</a>
-                        <button class="btn btn-sm btn-danger" onclick="Admin.deleteItem('furniture', <?= $item['id'] ?>, '<?= e(addslashes($item['name'])) ?>')">Delete</button>
+                        <button class="btn btn-sm btn-danger" 
+                                data-delete 
+                                data-url="/admin/api.php?action=furniture/delete&id=<?= $item['id'] ?>"
+                                data-csrf="<?= e($csrfToken) ?>"
+                                data-confirm="Delete furniture '<?= e(addslashes($item['name'])) ?>'?">
+                            Delete
+                        </button>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -225,7 +242,7 @@ function renderFurnitureList(): void
 function renderFurnitureAdd(): void
 {
     $categories = getCategories();
-    $tags = getTags();
+    $tagsGrouped = getTagsGrouped();
     $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
@@ -235,51 +252,87 @@ function renderFurnitureAdd(): void
         </div>
     </div>
     
-    <form class="admin-form" method="POST" data-ajax data-action="/admin/api.php?action=furniture/create" data-redirect="/admin/?page=furniture">
+    <form class="admin-form two-column" method="POST" data-ajax data-action="/admin/api.php?action=furniture/create" data-redirect="/admin/?page=furniture">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
         
-        <div class="form-group">
-            <label for="name">Name *</label>
-            <input type="text" id="name" name="name" required maxlength="255" placeholder="e.g., prop_sofa_01">
-            <p class="form-help">The exact prop name used in-game</p>
-        </div>
-        
-        <div class="form-group">
-            <label for="category_id">Category *</label>
-            <select id="category_id" name="category_id" required>
-                <option value="">Select a category</option>
-                <?php foreach ($categories as $cat): ?>
-                <option value="<?= $cat['id'] ?>"><?= e($cat['icon']) ?> <?= e($cat['name']) ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        
-        <div class="form-group">
-            <label for="price">Price</label>
-            <input type="number" id="price" name="price" min="0" value="0">
-        </div>
-        
-        <div class="form-group">
-            <label for="image_url">Image URL</label>
-            <input type="url" id="image_url" name="image_url" placeholder="https://...">
-            <p class="form-help">Optional: URL to an image of this furniture</p>
-        </div>
-        
-        <div class="form-group">
-            <label>Tags</label>
-            <div class="checkbox-group">
-                <?php foreach ($tags as $tag): ?>
-                <label class="checkbox-item">
-                    <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>">
-                    <span style="color: <?= e($tag['color']) ?>"><?= e($tag['name']) ?></span>
-                </label>
-                <?php endforeach; ?>
+        <!-- Left Column: Main Fields -->
+        <div class="form-column-left">
+            <div class="form-group">
+                <label for="name">Name *</label>
+                <input type="text" id="name" name="name" required maxlength="255" placeholder="e.g., prop_sofa_01">
+                <p class="form-help">The exact prop name used in-game</p>
+            </div>
+            
+            <div class="form-group">
+                <label for="category_id">Category *</label>
+                <select id="category_id" name="category_id" required>
+                    <option value="">Select a category</option>
+                    <?php foreach ($categories as $cat): ?>
+                    <option value="<?= $cat['id'] ?>"><?= e($cat['icon']) ?> <?= e($cat['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="price">Price</label>
+                <input type="number" id="price" name="price" min="0" value="250">
+                <p class="form-help">Default is $250 (most common price in-game)</p>
+            </div>
+            
+            <div class="form-group">
+                <label for="image_url">Image URL</label>
+                <input type="text" id="image_url" name="image_url" placeholder="/images/furniture/... or https://...">
+                <p class="form-help">Relative path (starting with /) or full URL</p>
+                <div class="image-preview" id="image-preview">
+                    <img src="/images/placeholder.svg" alt="Preview" id="preview-img">
+                </div>
+            </div>
+            
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Create Furniture</button>
+                <a href="/admin/?page=furniture" class="btn">Cancel</a>
             </div>
         </div>
         
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Create Furniture</button>
-            <a href="/admin/?page=furniture" class="btn">Cancel</a>
+        <!-- Right Column: Tags by Group -->
+        <div class="form-column-right">
+            <label class="tags-column-label">Tags</label>
+            
+            <?php foreach ($tagsGrouped['groups'] as $group): ?>
+            <?php if (!empty($group['tags'])): ?>
+            <div class="tag-group-section">
+                <h4>
+                    <span class="group-color-dot" style="background: <?= e($group['color']) ?>"></span>
+                    <?= e($group['name']) ?>
+                </h4>
+                <div class="checkbox-group">
+                    <?php foreach ($group['tags'] as $tag): ?>
+                    <label class="checkbox-item">
+                        <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>">
+                        <span><?= e($tag['name']) ?></span>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+            <?php endforeach; ?>
+            
+            <?php if (!empty($tagsGrouped['ungrouped'])): ?>
+            <div class="tag-group-section">
+                <h4>
+                    <span class="group-color-dot" style="background: #6b7280"></span>
+                    Uncategorized
+                </h4>
+                <div class="checkbox-group">
+                    <?php foreach ($tagsGrouped['ungrouped'] as $tag): ?>
+                    <label class="checkbox-item">
+                        <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>">
+                        <span><?= e($tag['name']) ?></span>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
     </form>
     <?php
@@ -294,9 +347,12 @@ function renderFurnitureEdit(int $id): void
     }
     
     $categories = getCategories();
-    $tags = getTags();
+    $tagsGrouped = getTagsGrouped();
     $itemTagIds = array_column($item['tags'] ?? [], 'id');
     $csrfToken = generateCsrfToken();
+    
+    // Determine current image URL for preview
+    $currentImageUrl = $item['image_url'] ?? $item['image'] ?? '';
     ?>
     <div class="admin-header">
         <h1>✏️ Edit Furniture</h1>
@@ -305,51 +361,87 @@ function renderFurnitureEdit(int $id): void
         </div>
     </div>
     
-    <form class="admin-form" method="POST" data-ajax data-action="/admin/api.php?action=furniture/update&id=<?= $id ?>" data-redirect="/admin/?page=furniture">
+    <form class="admin-form two-column" method="POST" data-ajax data-action="/admin/api.php?action=furniture/update&id=<?= $id ?>" data-redirect="/admin/?page=furniture">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
         
-        <div class="form-group">
-            <label for="name">Name *</label>
-            <input type="text" id="name" name="name" required maxlength="255" value="<?= e($item['name']) ?>">
-        </div>
-        
-        <div class="form-group">
-            <label for="category_id">Category *</label>
-            <select id="category_id" name="category_id" required>
-                <option value="">Select a category</option>
-                <?php foreach ($categories as $cat): ?>
-                <option value="<?= $cat['id'] ?>" <?= $cat['id'] == $item['category_id'] ? 'selected' : '' ?>>
-                    <?= e($cat['icon']) ?> <?= e($cat['name']) ?>
-                </option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        
-        <div class="form-group">
-            <label for="price">Price</label>
-            <input type="number" id="price" name="price" min="0" value="<?= $item['price'] ?>">
-        </div>
-        
-        <div class="form-group">
-            <label for="image_url">Image URL</label>
-            <input type="url" id="image_url" name="image_url" value="<?= e($item['image_url'] ?? '') ?>">
-        </div>
-        
-        <div class="form-group">
-            <label>Tags</label>
-            <div class="checkbox-group">
-                <?php foreach ($tags as $tag): ?>
-                <label class="checkbox-item <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>">
-                    <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>" <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>>
-                    <span style="color: <?= e($tag['color']) ?>"><?= e($tag['name']) ?></span>
-                </label>
-                <?php endforeach; ?>
+        <!-- Left Column: Main Fields -->
+        <div class="form-column-left">
+            <div class="form-group">
+                <label for="name">Name *</label>
+                <input type="text" id="name" name="name" required maxlength="255" value="<?= e($item['name']) ?>">
+            </div>
+            
+            <div class="form-group">
+                <label for="category_id">Category *</label>
+                <select id="category_id" name="category_id" required>
+                    <option value="">Select a category</option>
+                    <?php foreach ($categories as $cat): ?>
+                    <option value="<?= $cat['id'] ?>" <?= $cat['id'] == $item['category_id'] ? 'selected' : '' ?>>
+                        <?= e($cat['icon']) ?> <?= e($cat['name']) ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="price">Price</label>
+                <input type="number" id="price" name="price" min="0" value="<?= $item['price'] ?>">
+            </div>
+            
+            <div class="form-group">
+                <label for="image_url">Image URL</label>
+                <input type="text" id="image_url" name="image_url" value="<?= e($item['image_url'] ?? '') ?>" placeholder="/images/furniture/... or https://...">
+                <p class="form-help">Relative path (starting with /) or full URL</p>
+                <div class="image-preview" id="image-preview">
+                    <img src="<?= e($currentImageUrl ?: '/images/placeholder.svg') ?>" alt="Preview" id="preview-img" onerror="this.src='/images/placeholder.svg'">
+                </div>
+            </div>
+            
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Update Furniture</button>
+                <a href="/admin/?page=furniture" class="btn">Cancel</a>
             </div>
         </div>
         
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Update Furniture</button>
-            <a href="/admin/?page=furniture" class="btn">Cancel</a>
+        <!-- Right Column: Tags by Group -->
+        <div class="form-column-right">
+            <label class="tags-column-label">Tags</label>
+            
+            <?php foreach ($tagsGrouped['groups'] as $group): ?>
+            <?php if (!empty($group['tags'])): ?>
+            <div class="tag-group-section">
+                <h4>
+                    <span class="group-color-dot" style="background: <?= e($group['color']) ?>"></span>
+                    <?= e($group['name']) ?>
+                </h4>
+                <div class="checkbox-group">
+                    <?php foreach ($group['tags'] as $tag): ?>
+                    <label class="checkbox-item <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>">
+                        <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>" <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>>
+                        <span><?= e($tag['name']) ?></span>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+            <?php endforeach; ?>
+            
+            <?php if (!empty($tagsGrouped['ungrouped'])): ?>
+            <div class="tag-group-section">
+                <h4>
+                    <span class="group-color-dot" style="background: #6b7280"></span>
+                    Uncategorized
+                </h4>
+                <div class="checkbox-group">
+                    <?php foreach ($tagsGrouped['ungrouped'] as $tag): ?>
+                    <label class="checkbox-item <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>">
+                        <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>" <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>>
+                        <span><?= e($tag['name']) ?></span>
+                    </label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
     </form>
     <?php
@@ -358,6 +450,7 @@ function renderFurnitureEdit(int $id): void
 function renderCategoryList(): void
 {
     $categories = getCategories();
+    $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
         <h1>📁 Categories</h1>
@@ -367,10 +460,10 @@ function renderCategoryList(): void
     </div>
     
     <div class="data-table-container">
-        <table class="data-table">
+        <table class="data-table" data-sortable data-reorder-url="/admin/api.php?action=categories/reorder">
             <thead>
                 <tr>
-                    <th>ID</th>
+                    <th style="width: 40px">⋮⋮</th>
                     <th>Icon</th>
                     <th>Name</th>
                     <th>Slug</th>
@@ -382,7 +475,7 @@ function renderCategoryList(): void
             <tbody>
                 <?php foreach ($categories as $cat): ?>
                 <tr data-id="<?= $cat['id'] ?>">
-                    <td><?= $cat['id'] ?></td>
+                    <td class="drag-handle">⋮⋮</td>
                     <td style="font-size: 1.5rem;"><?= e($cat['icon']) ?></td>
                     <td><strong><?= e($cat['name']) ?></strong></td>
                     <td><code><?= e($cat['slug']) ?></code></td>
@@ -391,7 +484,13 @@ function renderCategoryList(): void
                     <td class="actions">
                         <a href="/admin/?page=categories&action=edit&id=<?= $cat['id'] ?>" class="btn btn-sm">Edit</a>
                         <?php if ($cat['item_count'] == 0): ?>
-                        <button class="btn btn-sm btn-danger" onclick="Admin.deleteItem('categories', <?= $cat['id'] ?>, '<?= e(addslashes($cat['name'])) ?>')">Delete</button>
+                        <button class="btn btn-sm btn-danger" 
+                                data-delete 
+                                data-url="/admin/api.php?action=categories/delete&id=<?= $cat['id'] ?>"
+                                data-csrf="<?= e($csrfToken) ?>"
+                                data-confirm="Delete category '<?= e(addslashes($cat['name'])) ?>'?">
+                            Delete
+                        </button>
                         <?php endif; ?>
                     </td>
                 </tr>
@@ -483,13 +582,180 @@ function renderCategoryEdit(int $id): void
     <?php
 }
 
+// =============================================
+// TAG GROUP VIEWS
+// =============================================
+
+function renderTagGroupList(): void
+{
+    $groups = getTagGroups();
+    $csrfToken = generateCsrfToken();
+    ?>
+    <div class="admin-header">
+        <h1>📁 Tag Groups</h1>
+        <div class="actions">
+            <a href="/admin/?page=tags" class="btn">🏷️ Manage Tags</a>
+            <a href="/admin/?page=tag-groups&action=add" class="btn btn-primary">+ Add Group</a>
+        </div>
+    </div>
+    
+    <div class="data-table-container">
+        <table class="data-table" data-sortable data-reorder-url="/admin/api.php?action=tag-groups/reorder">
+            <thead>
+                <tr>
+                    <th style="width: 40px">⋮⋮</th>
+                    <th>Name</th>
+                    <th>Color</th>
+                    <th>Tags Count</th>
+                    <th>Sort Order</th>
+                    <th style="width: 100px">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php 
+                $allTags = getTags();
+                $tagCounts = [];
+                foreach ($allTags as $tag) {
+                    $gid = $tag['group_id'] ?? 0;
+                    $tagCounts[$gid] = ($tagCounts[$gid] ?? 0) + 1;
+                }
+                foreach ($groups as $group): 
+                ?>
+                <tr data-id="<?= $group['id'] ?>">
+                    <td class="drag-handle">⋮⋮</td>
+                    <td>
+                        <span class="group-color-dot" style="background: <?= e($group['color']) ?>"></span>
+                        <strong><?= e($group['name']) ?></strong>
+                    </td>
+                    <td>
+                        <span class="color-preview" style="background: <?= e($group['color']) ?>"></span>
+                        <code><?= e($group['color']) ?></code>
+                    </td>
+                    <td><?= $tagCounts[$group['id']] ?? 0 ?></td>
+                    <td><?= $group['sort_order'] ?></td>
+                    <td class="actions">
+                        <a href="/admin/?page=tag-groups&action=edit&id=<?= $group['id'] ?>" class="btn btn-sm">Edit</a>
+                        <button class="btn btn-sm btn-danger" 
+                                data-delete 
+                                data-url="/admin/api.php?action=tag-groups/delete&id=<?= $group['id'] ?>"
+                                data-csrf="<?= e($csrfToken) ?>"
+                                data-confirm="Delete this tag group? Tags will become ungrouped.">
+                            ×
+                        </button>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                <?php if (empty($groups)): ?>
+                <tr><td colspan="6" class="empty">No tag groups found</td></tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php
+}
+
+function renderTagGroupAdd(): void
+{
+    $csrfToken = generateCsrfToken();
+    ?>
+    <div class="admin-header">
+        <h1>➕ Add Tag Group</h1>
+        <div class="actions">
+            <a href="/admin/?page=tag-groups" class="btn">← Back to List</a>
+        </div>
+    </div>
+    
+    <form class="admin-form" method="POST" data-ajax data-action="/admin/api.php?action=tag-groups/create" data-redirect="/admin/?page=tag-groups">
+        <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+        
+        <div class="form-group">
+            <label for="name">Name *</label>
+            <input type="text" id="name" name="name" required maxlength="50" placeholder="e.g., Style / Era">
+        </div>
+        
+        <div class="form-group">
+            <label for="color">Color</label>
+            <div class="color-input-wrapper">
+                <input type="color" id="color" name="color" value="#6b7280">
+                <input type="text" id="color_text" value="#6b7280" pattern="^#[0-9a-fA-F]{6}$" maxlength="7">
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label for="sort_order">Sort Order</label>
+            <input type="number" id="sort_order" name="sort_order" min="0" value="0">
+            <p class="form-help">Lower numbers appear first</p>
+        </div>
+        
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Create Group</button>
+            <a href="/admin/?page=tag-groups" class="btn">Cancel</a>
+        </div>
+    </form>
+    <?php
+}
+
+function renderTagGroupEdit(int $id): void
+{
+    $group = getTagGroupById($id);
+    if (!$group) {
+        echo '<div class="alert alert-error">Tag group not found</div>';
+        return;
+    }
+    
+    $csrfToken = generateCsrfToken();
+    ?>
+    <div class="admin-header">
+        <h1>✏️ Edit Tag Group</h1>
+        <div class="actions">
+            <a href="/admin/?page=tag-groups" class="btn">← Back to List</a>
+        </div>
+    </div>
+    
+    <form class="admin-form" method="POST" data-ajax data-action="/admin/api.php?action=tag-groups/update&id=<?= $id ?>" data-redirect="/admin/?page=tag-groups">
+        <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+        
+        <div class="form-group">
+            <label for="name">Name *</label>
+            <input type="text" id="name" name="name" required maxlength="50" value="<?= e($group['name']) ?>">
+        </div>
+        
+        <div class="form-group">
+            <label for="color">Color</label>
+            <div class="color-input-wrapper">
+                <input type="color" id="color" name="color" value="<?= e($group['color']) ?>">
+                <input type="text" id="color_text" value="<?= e($group['color']) ?>" pattern="^#[0-9a-fA-F]{6}$" maxlength="7">
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label for="sort_order">Sort Order</label>
+            <input type="number" id="sort_order" name="sort_order" min="0" value="<?= $group['sort_order'] ?>">
+            <p class="form-help">Lower numbers appear first</p>
+        </div>
+        
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+            <a href="/admin/?page=tag-groups" class="btn">Cancel</a>
+        </div>
+    </form>
+    <?php
+}
+
+// =============================================
+// TAG VIEWS
+// =============================================
+
 function renderTagList(): void
 {
     $tags = getTags();
+    $groups = getTagGroups();
+    $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
         <h1>🏷️ Tags</h1>
         <div class="actions">
+            <a href="/admin/?page=tag-groups" class="btn">📁 Manage Groups</a>
             <a href="/admin/?page=tags&action=add" class="btn btn-primary">+ Add Tag</a>
         </div>
     </div>
@@ -498,12 +764,13 @@ function renderTagList(): void
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>ID</th>
-                    <th>Color</th>
+                    <th style="width: 50px">ID</th>
+                    <th style="width: 50px">Color</th>
                     <th>Name</th>
                     <th>Slug</th>
-                    <th>Usage</th>
-                    <th>Actions</th>
+                    <th>Group</th>
+                    <th style="width: 80px">Usage</th>
+                    <th style="width: 140px">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -511,14 +778,29 @@ function renderTagList(): void
                 <tr data-id="<?= $tag['id'] ?>">
                     <td><?= $tag['id'] ?></td>
                     <td>
-                        <span style="display: inline-block; width: 24px; height: 24px; border-radius: 4px; background: <?= e($tag['color']) ?>"></span>
+                        <span class="color-preview" style="background: <?= e($tag['color']) ?>"></span>
                     </td>
                     <td><strong><?= e($tag['name']) ?></strong></td>
                     <td><code><?= e($tag['slug']) ?></code></td>
-                    <td><?= number_format($tag['usage_count'] ?? 0) ?> items</td>
+                    <td>
+                        <?php if ($tag['group_name']): ?>
+                        <span class="badge" style="background: <?= e($tag['group_color'] ?? '#6b7280') ?>">
+                            <?= e($tag['group_name']) ?>
+                        </span>
+                        <?php else: ?>
+                        <span class="text-muted">—</span>
+                        <?php endif; ?>
+                    </td>
+                    <td><?= number_format($tag['usage_count'] ?? 0) ?></td>
                     <td class="actions">
                         <a href="/admin/?page=tags&action=edit&id=<?= $tag['id'] ?>" class="btn btn-sm">Edit</a>
-                        <button class="btn btn-sm btn-danger" onclick="Admin.deleteItem('tags', <?= $tag['id'] ?>, '<?= e(addslashes($tag['name'])) ?>')">Delete</button>
+                        <button class="btn btn-sm btn-danger" 
+                                data-delete 
+                                data-url="/admin/api.php?action=tags/delete&id=<?= $tag['id'] ?>"
+                                data-csrf="<?= e($csrfToken) ?>"
+                                data-confirm="Delete tag '<?= e(addslashes($tag['name'])) ?>'?">
+                            Delete
+                        </button>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -530,6 +812,7 @@ function renderTagList(): void
 
 function renderTagAdd(): void
 {
+    $groups = getTagGroups();
     $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
@@ -548,8 +831,24 @@ function renderTagAdd(): void
         </div>
         
         <div class="form-group">
+            <label for="group_id">Tag Group</label>
+            <select id="group_id" name="group_id">
+                <option value="">No group (uncategorized)</option>
+                <?php foreach ($groups as $group): ?>
+                <option value="<?= $group['id'] ?>" style="color: <?= e($group['color']) ?>">
+                    <?= e($group['name']) ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
+            <p class="form-help">Assign this tag to a group for organized filtering</p>
+        </div>
+        
+        <div class="form-group">
             <label for="color">Color</label>
-            <input type="color" id="color" name="color" value="#6b7280" style="width: 100px; height: 40px; padding: 0; border: none;">
+            <div class="color-input-wrapper">
+                <input type="color" id="color" name="color" value="#6b7280">
+                <input type="text" id="color_text" value="#6b7280" pattern="^#[0-9a-fA-F]{6}$" maxlength="7">
+            </div>
         </div>
         
         <div class="form-actions">
@@ -568,6 +867,7 @@ function renderTagEdit(int $id): void
         return;
     }
     
+    $groups = getTagGroups();
     $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
@@ -586,8 +886,24 @@ function renderTagEdit(int $id): void
         </div>
         
         <div class="form-group">
+            <label for="group_id">Tag Group</label>
+            <select id="group_id" name="group_id">
+                <option value="">No group (uncategorized)</option>
+                <?php foreach ($groups as $group): ?>
+                <option value="<?= $group['id'] ?>" <?= ($tag['group_id'] ?? 0) == $group['id'] ? 'selected' : '' ?>>
+                    <?= e($group['name']) ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
+            <p class="form-help">Assign this tag to a group for organized filtering</p>
+        </div>
+        
+        <div class="form-group">
             <label for="color">Color</label>
-            <input type="color" id="color" name="color" value="<?= e($tag['color']) ?>" style="width: 100px; height: 40px; padding: 0; border: none;">
+            <div class="color-input-wrapper">
+                <input type="color" id="color" name="color" value="<?= e($tag['color']) ?>">
+                <input type="text" id="color_text" value="<?= e($tag['color']) ?>" pattern="^#[0-9a-fA-F]{6}$" maxlength="7">
+            </div>
         </div>
         
         <div class="form-actions">
