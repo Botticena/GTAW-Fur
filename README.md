@@ -19,8 +19,8 @@ This is a community project I built to help GTA World players find furniture mor
 ### Features
 
 - **Rich filters** — Categories plus grouped tag filters (style, mood, size, materials, effects, themes)
-- **Image lightbox** — Click any image to open a zoomed preview with next/previous navigation and shareable deep links
-- **Keyboard shortcuts** — `/` to focus search, arrow keys to navigate cards, `C` to copy `/sf` and `F` to toggle favorites
+- **Image lightbox** — Click any image to open a zoomed preview with navigation and shareable links
+- **Keyboard shortcuts** — `/` to focus search, arrow keys to navigate, `C` to copy `/sf` and `F` to favorite
 - **Favorites export** — Export all your saved items as a ready-to-use list of `/sf` commands (clipboard or text file)
 - **Admin Panel** — Manage furniture, categories, tags, users, and imports via a web UI. [View screenshots](https://ibb.co/album/vwMwRK).
 
