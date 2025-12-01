@@ -356,6 +356,7 @@ main {
     aspect-ratio: 4 / 3;
     background: var(--bg-elevated);
     overflow: hidden;
+    cursor: zoom-in;
 }
 
 .furniture-card .card-image img {
@@ -803,6 +804,233 @@ select:focus-visible {
 }
 
 /* ============================================
+   IMAGE LIGHTBOX
+   ============================================ */
+.lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.95);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1001;
+    padding: var(--spacing-lg);
+    cursor: zoom-out;
+    backdrop-filter: blur(4px);
+}
+
+.lightbox-overlay.active {
+    display: flex;
+    animation: lightboxFadeIn 0.2s ease;
+}
+
+@keyframes lightboxFadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.lightbox-content {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: default;
+    animation: lightboxZoomIn 0.25s ease;
+}
+
+@keyframes lightboxZoomIn {
+    from {
+        transform: scale(0.9);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.lightbox-content img {
+    max-width: 100%;
+    max-height: 80vh;
+    object-fit: contain;
+    border-radius: var(--radius-md);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.lightbox-info {
+    margin-top: var(--spacing-lg);
+    text-align: center;
+    color: var(--text-primary);
+    max-width: 100%;
+}
+
+.lightbox-info h3 {
+    margin: 0 0 var(--spacing-sm);
+    font-size: 1.125rem;
+    font-weight: 600;
+    word-break: break-word;
+}
+
+.lightbox-info .meta {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    margin-bottom: var(--spacing-md);
+}
+
+.lightbox-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+    justify-content: center;
+}
+
+.lightbox-actions .btn-copy {
+    flex: none;
+    padding: var(--spacing-sm) var(--spacing-lg);
+    font-size: 0.9rem;
+}
+
+.lightbox-close {
+    position: fixed;
+    top: var(--spacing-lg);
+    right: var(--spacing-lg);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 1.5rem;
+    color: var(--text-primary);
+    transition: all var(--transition-fast);
+    z-index: 1002;
+}
+
+.lightbox-close:hover {
+    background: var(--primary);
+    border-color: var(--primary);
+    transform: rotate(90deg);
+}
+
+.lightbox-nav {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 1.25rem;
+    color: var(--text-primary);
+    transition: all var(--transition-fast);
+    z-index: 1002;
+}
+
+.lightbox-nav:hover {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.lightbox-nav.prev {
+    left: var(--spacing-lg);
+}
+
+.lightbox-nav.next {
+    right: var(--spacing-lg);
+}
+
+.lightbox-nav:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.lightbox-nav:disabled:hover {
+    background: var(--bg-card);
+    border-color: var(--border-color);
+}
+
+/* ============================================
+   TAG FILTERS
+   ============================================ */
+.tag-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+    align-items: center;
+}
+
+.tag-filter-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+}
+
+.tag-filter-btn:hover {
+    border-color: var(--tag-color, var(--primary));
+    background: color-mix(in srgb, var(--tag-color, var(--primary)) 15%, transparent);
+}
+
+.tag-filter-btn.active {
+    background: var(--tag-color, var(--primary));
+    border-color: var(--tag-color, var(--primary));
+    color: white;
+}
+
+.tag-filter-btn .tag-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--tag-color, var(--text-muted));
+}
+
+.tag-filter-btn.active .tag-dot {
+    background: white;
+}
+
+.tag-filters-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-right: var(--spacing-xs);
+}
+
+.tag-filters-clear {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: var(--spacing-xs);
+    transition: color var(--transition-fast);
+}
+
+.tag-filters-clear:hover {
+    color: var(--error);
+}
+
+/* ============================================
    UTILITIES
    ============================================ */
 .sr-only {
@@ -830,4 +1058,49 @@ select:focus-visible {
 .mb-sm { margin-bottom: var(--spacing-sm); }
 .mb-md { margin-bottom: var(--spacing-md); }
 .mb-lg { margin-bottom: var(--spacing-lg); }
+
+/* ============================================
+   RESPONSIVE LIGHTBOX
+   ============================================ */
+@media (max-width: 768px) {
+    .lightbox-close {
+        top: var(--spacing-md);
+        right: var(--spacing-md);
+        width: 40px;
+        height: 40px;
+    }
+    
+    .lightbox-nav {
+        width: 36px;
+        height: 36px;
+    }
+    
+    .lightbox-nav.prev {
+        left: var(--spacing-sm);
+    }
+    
+    .lightbox-nav.next {
+        right: var(--spacing-sm);
+    }
+    
+    .lightbox-content img {
+        max-height: 70vh;
+    }
+    
+    .lightbox-info h3 {
+        font-size: 1rem;
+    }
+    
+    .tag-filters {
+        max-width: 100%;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        padding-bottom: var(--spacing-xs);
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .tag-filter-btn {
+        flex-shrink: 0;
+    }
+}
 
