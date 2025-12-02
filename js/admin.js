@@ -549,6 +549,58 @@ const Admin = {
     },
 
     /**
+     * Approve submission
+     */
+    async approveSubmission(id) {
+        if (!confirm('Approve this submission and create/update the furniture?')) {
+            return;
+        }
+
+        try {
+            const result = await this.api('submissions/approve', {
+                method: 'POST',
+                id: id
+            });
+
+            if (result.success) {
+                this.toast(result.message || 'Submission approved', 'success');
+                window.location.reload();
+            } else {
+                this.toast(result.error || 'Failed to approve submission', 'error');
+            }
+        } catch (error) {
+            console.error('Approve error:', error);
+            this.toast('Network error. Please try again.', 'error');
+        }
+    },
+
+    /**
+     * Reject submission
+     */
+    async rejectSubmission(id) {
+        const notes = prompt('Enter reason for rejection (optional):');
+        if (notes === null) return; // Cancelled
+
+        try {
+            const result = await this.api('submissions/reject', {
+                method: 'POST',
+                id: id,
+                body: { notes }
+            });
+
+            if (result.success) {
+                this.toast('Submission rejected', 'success');
+                window.location.reload();
+            } else {
+                this.toast(result.error || 'Failed to reject submission', 'error');
+            }
+        } catch (error) {
+            console.error('Reject error:', error);
+            this.toast('Network error. Please try again.', 'error');
+        }
+    },
+
+    /**
      * Import CSV
      */
     async importCsv() {
