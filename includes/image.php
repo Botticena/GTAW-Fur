@@ -15,11 +15,30 @@ if (basename($_SERVER['PHP_SELF']) === 'image.php') {
 }
 
 /**
+ * DEPENDENCY NOTE: Circular Dependency Prevention
+ * 
+ * This file conditionally requires functions.php to access updateFurnitureImage().
+ * 
+ * IMPORTANT: functions.php must NEVER require or include image.php, as this would
+ * create a circular dependency. The dependency is one-way: image.php → functions.php
+ * 
+ * If functions.php needs image processing functions, it should call them directly
+ * without requiring this file, or the dependency should be refactored.
+ * 
+ * Current dependency chain:
+ * - image.php → functions.php (conditional, only if updateFurnitureImage doesn't exist)
+ * - functions.php → (does NOT require image.php) ✓
+ */
+if (!function_exists('updateFurnitureImage')) {
+    require_once __DIR__ . '/functions.php';
+}
+
+/**
  * Get the furniture images directory path
  */
 function getImagesDir(): string
 {
-    return dirname(__DIR__) . '/images/furniture/';
+    return __DIR__ . '/../images/furniture/';
 }
 
 /**
@@ -28,6 +47,20 @@ function getImagesDir(): string
 function getImagesWebPath(): string
 {
     return '/images/furniture/';
+}
+
+/**
+ * Check if an image URL is already a local image (should skip processing)
+ * 
+ * @param string $url Image URL to check
+ * @return bool True if image is local and should not be processed
+ */
+function isLocalImage(string $url): bool
+{
+    return str_starts_with($url, '/images/furniture/') 
+        || str_starts_with($url, '/')
+        || str_starts_with($url, './')
+        || str_contains($url, 'placeholder');
 }
 
 /**
@@ -95,8 +128,8 @@ function downloadImageToTemp(string $url): ?string
             CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_USERAGENT => 'GTAW-Furniture-Catalog/1.0',
-            // Limit to 10MB
-            CURLOPT_MAXFILESIZE => 10 * 1024 * 1024,
+            // Limit to MAX_IMAGE_SIZE (10MB)
+            CURLOPT_MAXFILESIZE => MAX_IMAGE_SIZE,
         ]);
         
         $imageData = curl_exec($ch);
@@ -279,127 +312,178 @@ function generateImageFilename(int $furnitureId, string $prefix = 'furniture'): 
 }
 
 /**
- * Process image from URL: download, resize, convert to WebP
+ * ImageProcessor service class
  * 
- * This is the main function to call for image processing.
- * 
- * @param string $url External image URL
- * @param int $furnitureId Furniture item ID (for filename)
- * @param int $maxWidth Maximum image width (default 800px)
- * @param int $quality WebP quality 0-100 (default 80)
- * @return string|null Local web path on success, null on failure
+ * Encapsulates image processing operations for better organization and testability.
  */
-function processImageFromUrl(
-    string $url,
-    int $furnitureId,
-    int $maxWidth = 800,
-    int $quality = 80
-): ?string {
-    // Check GD availability
-    if (!isGdAvailable()) {
-        error_log("Image processing: GD library not available or missing WebP support");
-        return null;
-    }
-    
-    // Skip if already a local path
-    if (str_starts_with($url, '/') || str_starts_with($url, './')) {
-        return null;
-    }
-    
-    // Skip processing for placeholder or local images
-    if (str_contains($url, '/images/furniture/') || str_contains($url, 'placeholder')) {
-        return null;
-    }
-    
-    // Download to temp file
-    $tempFile = downloadImageToTemp($url);
-    if ($tempFile === null) {
-        return null;
-    }
-    
-    try {
-        // Load image
-        $image = loadImage($tempFile);
-        if ($image === null) {
+class ImageProcessor
+{
+    /**
+     * Process image from URL: download, resize, convert to WebP
+     * 
+     * @param string $url External image URL
+     * @param int $furnitureId Furniture item ID (for filename)
+     * @param int $maxWidth Maximum image width (default 800px)
+     * @param int $quality WebP quality 0-100 (default 80)
+     * @return string|null Local web path on success, null on failure
+     */
+    public function processFromUrl(
+        string $url,
+        int $furnitureId,
+        int $maxWidth = 800,
+        int $quality = 80
+    ): ?string {
+        // Check GD availability
+        if (!isGdAvailable()) {
+            error_log("Image processing: GD library not available or missing WebP support");
             return null;
         }
         
-        // Resize if needed
-        $image = resizeImage($image, $maxWidth);
-        
-        // Generate output path
-        $filename = generateImageFilename($furnitureId);
-        $outputPath = getImagesDir() . $filename;
-        
-        // Save as WebP
-        if (!saveAsWebp($image, $outputPath, $quality)) {
+        // Skip if already a local image
+        if (isLocalImage($url)) {
             return null;
         }
         
-        // Return web-accessible path
-        return getImagesWebPath() . $filename;
+        // Download to temp file
+        $tempFile = downloadImageToTemp($url);
+        if ($tempFile === null) {
+            return null;
+        }
         
-    } finally {
-        // Clean up temp file
-        @unlink($tempFile);
+        try {
+            // Load image
+            $image = loadImage($tempFile);
+            if ($image === null) {
+                return null;
+            }
+            
+            // Resize if needed
+            $image = resizeImage($image, $maxWidth);
+            
+            // Generate output path
+            $filename = generateImageFilename($furnitureId);
+            $outputPath = getImagesDir() . $filename;
+            
+            // Save as WebP
+            if (!saveAsWebp($image, $outputPath, $quality)) {
+                return null;
+            }
+            
+            // Return web-accessible path
+            return getImagesWebPath() . $filename;
+            
+        } finally {
+            // Clean up temp file
+            @unlink($tempFile);
+        }
     }
-}
 
-/**
- * Delete a furniture image file
- * 
- * @param string $imagePath Web path to the image
- * @return bool Success status
- */
-function deleteImageFile(string $imagePath): bool
-{
-    // Only delete local furniture images
-    if (!str_starts_with($imagePath, '/images/furniture/')) {
-        return false;
+    /**
+     * Process furniture image: download, process, update database, and optionally delete old image
+     * 
+     * This is a high-level helper method that combines image processing with database updates.
+     * Use this instead of calling processFromUrl() and updateFurnitureImage() separately.
+     * 
+     * @param PDO $pdo Database connection
+     * @param int $furnitureId Furniture item ID
+     * @param string|null $imageUrl Image URL to process (null to skip)
+     * @param string|null $oldImageUrl Optional old image URL to delete if changed
+     * @return string|null Local web path on success, null on failure or skip
+     */
+    public function processFurnitureImage(
+        PDO $pdo,
+        int $furnitureId,
+        ?string $imageUrl,
+        ?string $oldImageUrl = null
+    ): ?string {
+        if (!$imageUrl) {
+            return null;
+        }
+        
+        // Skip if already local
+        if (isLocalImage($imageUrl)) {
+            return null;
+        }
+        
+        // Process image
+        $localPath = $this->processFromUrl($imageUrl, $furnitureId);
+        if (!$localPath) {
+            return null;
+        }
+        
+        // Update database
+        try {
+            updateFurnitureImage($pdo, $furnitureId, $localPath);
+        } catch (RuntimeException $e) {
+            error_log("Failed to update furniture image: " . $e->getMessage());
+            return null;
+        }
+        
+        // Delete old image if changed
+        if ($oldImageUrl && $oldImageUrl !== $localPath && str_starts_with($oldImageUrl, '/images/furniture/')) {
+            $this->deleteImage($oldImageUrl);
+        }
+        
+        return $localPath;
     }
-    
-    $filename = basename($imagePath);
-    $fullPath = getImagesDir() . $filename;
-    
-    if (file_exists($fullPath)) {
-        return @unlink($fullPath);
-    }
-    
-    return true;
-}
 
-/**
- * Clean up old/orphaned images not referenced in database
- * 
- * @param PDO $pdo Database connection
- * @return int Number of files deleted
- */
-function cleanupOrphanedImages(PDO $pdo): int
-{
-    $imagesDir = getImagesDir();
-    $webPath = getImagesWebPath();
-    
-    if (!is_dir($imagesDir)) {
-        return 0;
+    /**
+     * Delete a furniture image file
+     * 
+     * @param string $imagePath Web path to the image
+     * @return bool Success status
+     */
+    public function deleteImage(string $imagePath): bool
+    {
+        // Only delete local furniture images
+        if (!str_starts_with($imagePath, '/images/furniture/')) {
+            return false;
+        }
+        
+        $filename = basename($imagePath);
+        $fullPath = getImagesDir() . $filename;
+        
+        if (file_exists($fullPath)) {
+            return @unlink($fullPath);
+        }
+        
+        return true;
     }
-    
-    // Get all image paths from database
-    $stmt = $pdo->query('SELECT image_url FROM furniture WHERE image_url IS NOT NULL');
-    $dbImages = $stmt->fetchAll(PDO::FETCH_COLUMN);
-    $dbFilenames = array_map('basename', $dbImages);
-    
-    $deleted = 0;
-    $files = glob($imagesDir . '*.webp');
-    
-    foreach ($files as $file) {
-        $filename = basename($file);
-        if (!in_array($filename, $dbFilenames)) {
-            if (@unlink($file)) {
-                $deleted++;
+
+    /**
+     * Clean up old/orphaned images not referenced in database
+     * 
+     * @param PDO $pdo Database connection
+     * @return int Number of files deleted
+     */
+    public function cleanupOrphaned(PDO $pdo): int
+    {
+        $imagesDir = getImagesDir();
+        $webPath = getImagesWebPath();
+        
+        if (!is_dir($imagesDir)) {
+            return 0;
+        }
+        
+        // Get all image paths from database
+        $stmt = $pdo->query('SELECT image_url FROM furniture WHERE image_url IS NOT NULL');
+        $dbImages = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        $dbFilenames = array_map('basename', $dbImages);
+        
+        $deleted = 0;
+        $files = glob($imagesDir . '*.webp');
+        
+        foreach ($files as $file) {
+            $filename = basename($file);
+            if (!in_array($filename, $dbFilenames, true)) {
+                if (@unlink($file)) {
+                    $deleted++;
+                }
             }
         }
+        
+        return $deleted;
     }
-    
-    return $deleted;
 }
+
 
