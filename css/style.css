@@ -233,6 +233,168 @@ main {
     color: var(--error);
 }
 
+.btn-dashboard {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.875rem;
+    transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.btn-dashboard:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-focus);
+}
+
+/* Lightbox User Action Buttons */
+.lightbox-actions .btn-collection,
+.lightbox-actions .btn-suggest {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    text-decoration: none;
+    height: 40px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+
+.lightbox-actions .btn-collection:hover,
+.lightbox-actions .btn-suggest:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-focus);
+}
+
+/* Modal - Matching admin panel styling */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1100;
+    padding: var(--spacing-lg);
+}
+
+.modal-overlay.active {
+    display: flex;
+}
+
+.modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    width: 100%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-lg);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: var(--spacing-lg);
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-lg);
+    border-top: 1px solid var(--border-color);
+}
+
+/* Modal buttons - matching dashboard styling */
+.modal .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    padding: 0 var(--spacing-lg);
+    height: 38px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all var(--transition-fast);
+    box-sizing: border-box;
+    line-height: 1;
+}
+
+.modal .btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.modal .btn:active {
+    transform: scale(0.98);
+}
+
+.modal .btn-primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+.modal .btn-primary:hover {
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
+    color: white;
+}
+
+.modal .btn-sm {
+    padding: 0 var(--spacing-sm);
+    height: 30px;
+    font-size: 0.75rem;
+}
+
 /* ============================================
    SEARCH BAR
    ============================================ */
@@ -382,6 +544,39 @@ main {
     border-color: var(--primary);
 }
 
+/* Favorites Only Button */
+.btn-favorites-filter {
+    display: inline-flex;
+    align-items: center;
+    align-self: center;
+    gap: var(--spacing-xs);
+    cursor: pointer;
+    font-size: 0.875rem;
+    padding: 0 var(--spacing-md);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+    user-select: none;
+    height: 42px;
+    color: var(--text-primary);
+    font-weight: 500;
+    white-space: nowrap;
+    margin-bottom: 0 !important;
+}
+
+.btn-favorites-filter:hover {
+    border-color: var(--error);
+    color: var(--error);
+}
+
+.btn-favorites-filter[aria-pressed="true"],
+.btn-favorites-filter.active {
+    background: var(--error);
+    border-color: var(--error);
+    color: white;
+}
+
 /* Old tag-filter styles - keeping for backwards compatibility with other uses */
 .tag-filter.active {
     background: var(--primary);
@@ -464,7 +659,6 @@ main {
     box-shadow: var(--shadow-lg);
     border-color: var(--border-color-hover);
 }
-
 
 .furniture-card .card-image {
     position: relative;
@@ -1067,15 +1261,22 @@ main {
     
     /* Lightbox responsive */
     .lightbox-actions {
-        flex-direction: column;
         width: 100%;
         max-width: 280px;
     }
     
+    .lightbox-actions-row {
+        width: 100%;
+    }
+    
     .lightbox-actions .btn-copy,
     .lightbox-actions .btn-favorite,
-    .lightbox-actions .btn-edit {
-        width: 100%;
+    .lightbox-actions .btn-edit,
+    .lightbox-actions .btn-share,
+    .lightbox-actions .btn-collection,
+    .lightbox-actions .btn-suggest {
+        flex: 1;
+        min-width: 0;
         justify-content: center;
     }
 }
@@ -1223,6 +1424,14 @@ select:focus-visible {
 
 .lightbox-actions {
     display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    justify-content: center;
+    align-items: center;
+}
+
+.lightbox-actions-row {
+    display: flex;
     gap: var(--spacing-sm);
     justify-content: center;
     align-items: center;
@@ -1287,31 +1496,6 @@ select:focus-visible {
     border-color: var(--info);
     color: var(--info);
     background: rgba(59, 130, 246, 0.1);
-}
-
-/* Export favorites button */
-.export-favorites-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-xs);
-    padding: var(--spacing-xs) var(--spacing-sm);
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    color: var(--text-secondary);
-    font-size: 0.75rem;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-}
-
-.export-favorites-btn:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-}
-
-.export-favorites-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
 }
 
 .lightbox-close {
@@ -1464,14 +1648,15 @@ select:focus-visible {
 .tag-group-trigger {
     display: flex;
     align-items: center;
-    gap: var(--spacing-xs);
+    gap: var(--spacing-sm);
     padding: var(--spacing-sm) var(--spacing-md);
     background: var(--bg-elevated);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     cursor: pointer;
     user-select: none;
-    min-width: 140px;
+    width: fit-content;
+    min-width: 100px;
     transition: all var(--transition-fast);
 }
 
@@ -1492,7 +1677,7 @@ select:focus-visible {
 }
 
 .tag-group-trigger .group-name {
-    flex: 1;
+    flex: 0 0 auto;
     font-size: 0.85rem;
     color: var(--text-primary);
     white-space: nowrap;
@@ -1699,6 +1884,7 @@ select:focus-visible {
     font-size: 0.8rem;
     cursor: pointer;
     transition: all var(--transition-fast);
+    margin-bottom: 0 !important;
 }
 
 .btn-clear-filters:hover {
