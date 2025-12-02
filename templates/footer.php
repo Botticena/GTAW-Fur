@@ -42,24 +42,40 @@ declare(strict_types=1);
                 <h3 id="lightbox-title"></h3>
                 <p class="meta" id="lightbox-meta"></p>
                 <div class="lightbox-actions">
-                    <button class="btn-copy" id="lightbox-copy" title="Copy /sf command">
-                        📋 Copy /sf command
-                    </button>
-                    <button class="btn-favorite" id="lightbox-favorite" title="Add to favorites" aria-label="Add to favorites">
-                        🤍
-                    </button>
-                    <button class="btn-share" id="lightbox-share" title="Share link to this furniture">
-                        🔗 Share
-                    </button>
-                    <?php if (isAdminLoggedIn()): ?>
-                    <a href="#" class="btn-edit" id="lightbox-edit" title="Edit this furniture">
-                        ✏️ Edit
-                    </a>
-                    <?php endif; ?>
+                    <div class="lightbox-actions-row lightbox-actions-primary">
+                        <button class="btn-copy" id="lightbox-copy" title="Copy /sf command">
+                            📋 Copy /sf command
+                        </button>
+                        <button class="btn-favorite" id="lightbox-favorite" title="Add to favorites" aria-label="Add to favorites">
+                            🤍
+                        </button>
+                        <button class="btn-share" id="lightbox-share" title="Share link to this furniture">
+                            🔗 Share
+                        </button>
+                    </div>
+                    <div class="lightbox-actions-row lightbox-actions-secondary">
+                        <?php if ($currentUser): ?>
+                        <button class="btn-collection" id="lightbox-add-collection" title="Add to collection">
+                            📁 Add to Collection
+                        </button>
+                        <a href="#" class="btn-suggest" id="lightbox-suggest-edit" title="Suggest an edit">
+                            ✏️ Suggest Edit
+                        </a>
+                        <?php endif; ?>
+                        <?php if (isAdminLoggedIn()): ?>
+                        <a href="#" class="btn-edit" id="lightbox-edit" title="Edit this furniture">
+                            ⚙️ Admin Edit
+                        </a>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+    
+    <?php if ($currentUser): ?>
+    <!-- Collection Picker Modal will be created dynamically by JavaScript -->
+    <?php endif; ?>
     
     <!-- Main Application Script -->
     <script src="/js/app.js"></script>
