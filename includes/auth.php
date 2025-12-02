@@ -109,14 +109,8 @@ function fetchGtawUserData(string $accessToken): ?array
 /**
  * Create or update user in database after OAuth login
  */
-function createOrUpdateUser(int $gtawId, string $username, ?string $gtawRole, ?string $mainCharacter): array
+function createOrUpdateUser(PDO $pdo, int $gtawId, string $username, ?string $gtawRole, ?string $mainCharacter): array
 {
-    global $pdo;
-    
-    if ($pdo === null) {
-        throw new RuntimeException('Database connection not available');
-    }
-    
     // Check if user exists
     $stmt = $pdo->prepare('SELECT * FROM users WHERE gtaw_id = ?');
     $stmt->execute([$gtawId]);
@@ -170,10 +164,7 @@ function requireAuth(): void
 {
     if (!isLoggedIn()) {
         if (isAjax()) {
-            http_response_code(401);
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'error' => 'Authentication required']);
-            exit;
+            jsonError('Authentication required', 401);
         }
         redirect('/login.php');
     }
@@ -258,10 +249,7 @@ function requireAdmin(): void
 {
     if (!isAdminLoggedIn()) {
         if (isAjax()) {
-            http_response_code(401);
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'error' => 'Admin authentication required']);
-            exit;
+            jsonError('Admin authentication required', 401);
         }
         redirect('/admin/login.php');
     }
@@ -285,14 +273,8 @@ function getCurrentAdmin(): ?array
 /**
  * Verify admin credentials
  */
-function verifyAdminCredentials(string $username, string $password): ?array
+function verifyAdminCredentials(PDO $pdo, string $username, string $password): ?array
 {
-    global $pdo;
-    
-    if ($pdo === null) {
-        return null;
-    }
-    
     $stmt = $pdo->prepare('SELECT * FROM admins WHERE username = ?');
     $stmt->execute([$username]);
     $admin = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -375,5 +357,99 @@ function recordFailedAdminLogin(): void
 function clearAdminLoginRateLimit(): void
 {
     unset($_SESSION['admin_login_attempts']);
+}
+
+/**
+ * Generic rate limiting function
+ * 
+ * @param string $key Unique identifier for the rate limit (e.g., 'oauth_callback', 'api_favorites')
+ * @param int $maxAttempts Maximum number of attempts allowed
+ * @param int $windowSeconds Time window in seconds
+ * @param string|null $identifier Optional identifier (e.g., user ID, IP) for per-user/IP rate limiting
+ * @return bool True if rate limited, false if allowed
+ */
+function isRateLimited(string $key, int $maxAttempts, int $windowSeconds, ?string $identifier = null): bool
+{
+    // Use identifier if provided, otherwise use session-based (for anonymous users)
+    $rateLimitKey = $identifier ? "rate_limit_{$key}_{$identifier}" : "rate_limit_{$key}";
+    
+    $now = time();
+    $attempts = $_SESSION[$rateLimitKey] ?? ['count' => 0, 'first_attempt' => $now];
+    
+    // Reset if window has passed
+    if (($now - $attempts['first_attempt']) >= $windowSeconds) {
+        $_SESSION[$rateLimitKey] = ['count' => 0, 'first_attempt' => $now];
+        return false;
+    }
+    
+    return $attempts['count'] >= $maxAttempts;
+}
+
+/**
+ * Record an attempt for rate limiting
+ * 
+ * @param string $key Unique identifier for the rate limit
+ * @param string|null $identifier Optional identifier (e.g., user ID, IP)
+ */
+function recordRateLimitAttempt(string $key, ?string $identifier = null): void
+{
+    $rateLimitKey = $identifier ? "rate_limit_{$key}_{$identifier}" : "rate_limit_{$key}";
+    $now = time();
+    
+    if (!isset($_SESSION[$rateLimitKey])) {
+        $_SESSION[$rateLimitKey] = ['count' => 1, 'first_attempt' => $now];
+    } else {
+        $_SESSION[$rateLimitKey]['count']++;
+    }
+}
+
+/**
+ * Execute a handler with rate limiting
+ * 
+ * Wraps a callable with rate limiting checks. If rate limited, calls the error handler.
+ * Otherwise, records the attempt and executes the handler.
+ * 
+ * @param string $key Unique identifier for the rate limit (e.g., 'api_favorites', 'oauth_callback')
+ * @param int $maxAttempts Maximum number of attempts allowed
+ * @param int $windowSeconds Time window in seconds
+ * @param callable $handler The handler function to execute if not rate limited
+ * @param string|null $identifier Optional identifier (e.g., user ID, IP) for per-user/IP rate limiting
+ * @param string $errorMessage Optional custom error message (default: 'Too many requests. Please slow down.')
+ * @param int $errorCode Optional HTTP error code (default: 429)
+ * @return mixed The return value of the handler function
+ */
+function withRateLimit(
+    string $key,
+    int $maxAttempts,
+    int $windowSeconds,
+    callable $handler,
+    ?string $identifier = null,
+    string $errorMessage = 'Too many requests. Please slow down.',
+    int $errorCode = 429
+): mixed {
+    if (isRateLimited($key, $maxAttempts, $windowSeconds, $identifier)) {
+        // Check if jsonError function exists (for API endpoints)
+        if (function_exists('jsonError')) {
+            jsonError($errorMessage, $errorCode);
+        } else {
+            // For non-API contexts, throw an exception or use a different error handler
+            throw new RuntimeException($errorMessage);
+        }
+    }
+    
+    recordRateLimitAttempt($key, $identifier);
+    return $handler();
+}
+
+/**
+ * Clear rate limit for a specific key
+ * 
+ * @param string $key Unique identifier for the rate limit
+ * @param string|null $identifier Optional identifier (e.g., user ID, IP)
+ */
+function clearRateLimit(string $key, ?string $identifier = null): void
+{
+    $rateLimitKey = $identifier ? "rate_limit_{$key}_{$identifier}" : "rate_limit_{$key}";
+    unset($_SESSION[$rateLimitKey]);
 }
 
