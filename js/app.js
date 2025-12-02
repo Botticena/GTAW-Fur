@@ -23,13 +23,15 @@ const App = {
             tags: [],
             search: '',
             sort: 'name',
-            order: 'asc'
+            order: 'asc',
+            favoritesOnly: false
         },
+        currentFurnitureForCollection: null,
         pagination: {
             page: 1,
-            perPage: 24,
+            per_page: 24,
             total: 0,
-            totalPages: 0
+            total_pages: 0
         },
         user: null,
         loading: false,
@@ -133,6 +135,7 @@ const App = {
             searchContainer: document.querySelector('.search-container'),
             categorySelect: document.getElementById('category-filter'),
             sortSelect: document.getElementById('sort-filter'),
+            favoritesOnlyBtn: document.getElementById('favorites-only'),
             tagFiltersContainer: document.getElementById('tag-filters-container'),
             activeTags: document.getElementById('active-tags'),
             activeTagsList: document.getElementById('active-tags-list'),
@@ -141,7 +144,6 @@ const App = {
             loadingOverlay: document.getElementById('loading'),
             toastContainer: document.getElementById('toast-container'),
             themeToggle: document.getElementById('theme-toggle'),
-            exportFavorites: document.getElementById('export-favorites'),
             // Lightbox elements
             lightbox: document.getElementById('lightbox'),
             lightboxImage: document.getElementById('lightbox-image'),
@@ -151,6 +153,8 @@ const App = {
             lightboxFavorite: document.getElementById('lightbox-favorite'),
             lightboxEdit: document.getElementById('lightbox-edit'),
             lightboxShare: document.getElementById('lightbox-share'),
+            lightboxAddCollection: document.getElementById('lightbox-add-collection'),
+            lightboxSuggestEdit: document.getElementById('lightbox-suggest-edit'),
             lightboxClose: document.querySelector('.lightbox-close'),
             lightboxPrev: document.querySelector('.lightbox-nav.prev'),
             lightboxNext: document.querySelector('.lightbox-nav.next')
@@ -183,11 +187,6 @@ const App = {
             this.toggleTheme();
         });
 
-        // Export favorites
-        this.elements.exportFavorites?.addEventListener('click', () => {
-            this.exportFavorites();
-        });
-
         // Category filter
         this.elements.categorySelect?.addEventListener('change', (e) => {
             this.state.filters.category = e.target.value || null;
@@ -201,6 +200,16 @@ const App = {
             const [sort, order] = e.target.value.split('-');
             this.state.filters.sort = sort || 'name';
             this.state.filters.order = order || 'asc';
+            this.state.pagination.page = 1;
+            this.loadFurniture();
+            this.updateUrl();
+        });
+
+        // Favorites only filter (button toggle)
+        this.elements.favoritesOnlyBtn?.addEventListener('click', () => {
+            this.state.filters.favoritesOnly = !this.state.filters.favoritesOnly;
+            this.elements.favoritesOnlyBtn.classList.toggle('active', this.state.filters.favoritesOnly);
+            this.elements.favoritesOnlyBtn.setAttribute('aria-pressed', this.state.filters.favoritesOnly);
             this.state.pagination.page = 1;
             this.loadFurniture();
             this.updateUrl();
@@ -322,6 +331,11 @@ const App = {
      * Bind lightbox-specific events
      */
     bindLightboxEvents() {
+        // Don't bind lightbox events on collection pages (they have their own handler)
+        if (window.location.pathname === '/collection.php' || window.location.pathname.includes('/collection.php')) {
+            return;
+        }
+        
         // Close button
         this.elements.lightboxClose?.addEventListener('click', () => {
             this.closeLightbox();
@@ -369,6 +383,26 @@ const App = {
             e.stopPropagation();
             // Link will navigate naturally via href
         });
+
+        // Add to Collection button in lightbox
+        this.elements.lightboxAddCollection?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const item = this.state.furniture[this.state.lightbox.currentIndex];
+            if (item) {
+                this.openCollectionModal(item.id);
+            }
+        });
+
+        // Suggest Edit button in lightbox
+        this.elements.lightboxSuggestEdit?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const item = this.state.furniture[this.state.lightbox.currentIndex];
+            if (item) {
+                // Navigate to suggest edit page
+                window.location.href = `/dashboard/?page=submissions&action=new&furniture_id=${item.id}`;
+            }
+        });
+
 
         // Share button in lightbox
         this.elements.lightboxShare?.addEventListener('click', (e) => {
@@ -427,6 +461,14 @@ const App = {
     },
 
     /**
+     * Get CSRF token from meta tag
+     */
+    getCsrfToken() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.content : null;
+    },
+
+    /**
      * API helper
      */
     async api(action, options = {}) {
@@ -441,15 +483,27 @@ const App = {
             });
         }
 
+        const method = options.method || 'GET';
         const fetchOptions = {
-            method: options.method || 'GET',
+            method: method,
             credentials: 'same-origin',
             headers: {}
         };
 
+        // Include CSRF token for state-changing operations
+        const csrfToken = this.getCsrfToken();
+        if (csrfToken && (method === 'POST' || method === 'DELETE' || method === 'PUT' || method === 'PATCH')) {
+            fetchOptions.headers['X-CSRF-Token'] = csrfToken;
+        }
+
         if (options.body) {
             fetchOptions.headers['Content-Type'] = 'application/json';
-            fetchOptions.body = JSON.stringify(options.body);
+            const body = { ...options.body };
+            // Also include CSRF token in body for compatibility
+            if (csrfToken && (method === 'POST' || method === 'DELETE' || method === 'PUT' || method === 'PATCH')) {
+                body.csrf_token = csrfToken;
+            }
+            fetchOptions.body = JSON.stringify(body);
         }
 
         const response = await fetch(url, fetchOptions);
@@ -606,7 +660,7 @@ const App = {
             const action = this.state.filters.search ? 'furniture/search' : 'furniture';
             const params = {
                 page: this.state.pagination.page,
-                per_page: this.state.pagination.perPage,
+                per_page: this.state.pagination.per_page,
                 category: this.state.filters.category,
                 tags: this.state.filters.tags.join(','),
                 sort: this.state.filters.sort,
@@ -615,6 +669,10 @@ const App = {
 
             if (this.state.filters.search) {
                 params.q = this.state.filters.search;
+            }
+
+            if (this.state.filters.favoritesOnly) {
+                params.favorites_only = '1';
             }
 
             const { data, pagination } = await this.api(action, { params });
@@ -809,9 +867,14 @@ const App = {
             this.updateLightboxFavoriteButton(item.id);
         }
 
-        // Update edit button link
+        // Update edit button link (admin)
         if (this.elements.lightboxEdit) {
             this.elements.lightboxEdit.href = `/admin/?page=furniture&action=edit&id=${item.id}`;
+        }
+
+        // Update suggest edit link (user)
+        if (this.elements.lightboxSuggestEdit) {
+            this.elements.lightboxSuggestEdit.href = `/dashboard/?page=submissions&action=new&furniture_id=${item.id}`;
         }
 
         // Update navigation buttons
@@ -834,6 +897,166 @@ const App = {
         this.elements.lightboxFavorite.innerHTML = isFav ? '❤️' : '🤍';
         this.elements.lightboxFavorite.setAttribute('title', isFav ? 'Remove from favorites' : 'Add to favorites');
         this.elements.lightboxFavorite.setAttribute('aria-label', isFav ? 'Remove from favorites' : 'Add to favorites');
+    },
+
+    /**
+     * Show modal - matching dashboard styling
+     */
+    showModal(title, content) {
+        // Remove existing modal if any
+        const existing = document.getElementById('app-modal');
+        if (existing) existing.remove();
+        
+        const modal = document.createElement('div');
+        modal.id = 'app-modal';
+        modal.className = 'modal-overlay active';
+        modal.innerHTML = `
+            <div class="modal">
+                <div class="modal-header">
+                    <h2>${this.escapeHtml(title)}</h2>
+                    <button class="modal-close" onclick="App.closeModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    ${content}
+                </div>
+            </div>
+        `;
+        
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                this.closeModal();
+            }
+        });
+        
+        document.body.appendChild(modal);
+    },
+
+    /**
+     * Close modal
+     */
+    closeModal() {
+        const modal = document.getElementById('app-modal');
+        if (modal) modal.remove();
+        this.state.currentFurnitureForCollection = null;
+    },
+
+    /**
+     * Open collection modal
+     */
+    async openCollectionModal(furnitureId) {
+        this.state.currentFurnitureForCollection = furnitureId;
+        
+        // Fetch user's collections
+        try {
+            const response = await fetch('/dashboard/api.php?action=collections');
+            const result = await response.json();
+            
+            if (!result.success) {
+                this.toast(result.error || 'Failed to load collections', 'error');
+                return;
+            }
+            
+            const collections = result.data;
+            let modalBody;
+            
+            if (collections.length === 0) {
+                modalBody = `
+                    <p style="margin-bottom: var(--spacing-md);">You haven't created any collections yet.</p>
+                    <a href="/dashboard/?page=collections&action=add" class="btn btn-primary">Create Collection</a>
+                `;
+            } else {
+                // Check which collections contain this item
+                const containsResponse = await fetch(`/dashboard/api.php?action=collections/contains&furniture_id=${furnitureId}`);
+                const containsResult = await containsResponse.json();
+                const containsIds = containsResult.success ? containsResult.data : [];
+                
+                modalBody = `
+                    <div style="display: flex; flex-direction: column; gap: var(--spacing-sm);">
+                        ${collections.map(col => `
+                            <button onclick="App.toggleCollectionItem(${col.id})" 
+                                    class="btn ${containsIds.includes(col.id) ? 'btn-primary' : ''}"
+                                    style="justify-content: space-between; width: 100%;"
+                                    data-collection-id="${col.id}"
+                                    data-item-count="${col.item_count}">
+                                <span>${this.escapeHtml(col.name)}</span>
+                                <span style="opacity: 0.7; font-size: 0.875rem;">${containsIds.includes(col.id) ? '✓ Added' : col.item_count + ' items'}</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                    <div style="margin-top: var(--spacing-lg); padding-top: var(--spacing-md); border-top: 1px solid var(--border-color);">
+                        <a href="/dashboard/?page=collections&action=add" class="btn btn-sm">+ New Collection</a>
+                    </div>
+                `;
+            }
+            
+            // Create or update modal
+            this.showModal('Add to Collection', modalBody);
+        } catch (error) {
+            console.error('Load collections error:', error);
+            this.toast('Failed to load collections', 'error');
+        }
+    },
+
+    /**
+     * Close collection modal (alias for consistency)
+     */
+    closeCollectionModal() {
+        this.closeModal();
+    },
+
+    /**
+     * Toggle item in collection
+     */
+    async toggleCollectionItem(collectionId) {
+        const furnitureId = this.state.currentFurnitureForCollection;
+        if (!furnitureId) return;
+        
+        const button = document.querySelector(`button[data-collection-id="${collectionId}"]`);
+        const isInCollection = button.classList.contains('btn-primary');
+        
+        const csrfToken = this.getCsrfToken();
+        try {
+            const action = isInCollection ? 'collections/remove-item' : 'collections/add-item';
+            const response = await fetch(`/dashboard/api.php?action=${action}`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken || ''
+                },
+                body: JSON.stringify({
+                    collection_id: collectionId,
+                    furniture_id: furnitureId,
+                    csrf_token: csrfToken
+                }),
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                button.classList.toggle('btn-primary');
+                const span = button.querySelector('span:last-child');
+                if (span) {
+                    // Match dashboard behavior: show item count when removing
+                    const itemCount = button.dataset.itemCount || '0';
+                    span.textContent = isInCollection ? itemCount + ' items' : '✓ Added';
+                }
+                this.toast(isInCollection ? 'Removed from collection' : 'Added to collection', 'success');
+            } else {
+                this.toast(result.error || 'Failed to update collection', 'error');
+            }
+        } catch (error) {
+            console.error('Toggle collection error:', error);
+            this.toast('Network error', 'error');
+        }
+    },
+
+    /**
+     * Escape HTML for safe insertion
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     },
 
     /**
@@ -861,40 +1084,6 @@ const App = {
         }
     },
 
-    /**
-     * Export favorites as text list
-     */
-    async exportFavorites() {
-        if (this.state.favorites.size === 0) {
-            this.toast('No favorites to export', 'info');
-            return;
-        }
-
-        try {
-            const { data } = await this.api('favorites');
-            const commands = data.map(f => `/sf ${f.name}`).join('\n');
-            
-            // Try to use clipboard
-            try {
-                await navigator.clipboard.writeText(commands);
-                this.toast(`${data.length} commands copied to clipboard!`, 'success');
-            } catch {
-                // Fallback: download as file
-                const blob = new Blob([commands], { type: 'text/plain' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'favorites.txt';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                this.toast('Favorites downloaded!', 'success');
-            }
-        } catch (error) {
-            this.toast('Failed to export favorites', 'error');
-        }
-    },
 
     // =========================================
     // RENDER METHODS
@@ -963,7 +1152,8 @@ const App = {
             tags: [],
             search: '',
             sort: 'name',
-            order: 'asc'
+            order: 'asc',
+            favoritesOnly: false
         };
         this.state.pagination.page = 1;
         
@@ -971,6 +1161,10 @@ const App = {
         if (this.elements.searchInput) this.elements.searchInput.value = '';
         if (this.elements.categorySelect) this.elements.categorySelect.value = '';
         if (this.elements.sortSelect) this.elements.sortSelect.value = 'name-asc';
+        if (this.elements.favoritesOnlyBtn) {
+            this.elements.favoritesOnlyBtn.classList.remove('active');
+            this.elements.favoritesOnlyBtn.setAttribute('aria-pressed', 'false');
+        }
         
         this.renderTagFilters();
         this.updateActiveTagsDisplay();
@@ -1370,9 +1564,9 @@ const App = {
     renderPagination() {
         if (!this.elements.pagination) return;
 
-        const { page, totalPages, total } = this.state.pagination;
+        const { page, total_pages, total } = this.state.pagination;
 
-        if (totalPages <= 1) {
+        if (total_pages <= 1) {
             this.elements.pagination.innerHTML = total > 0 
                 ? `<span class="page-info">${total} item${total === 1 ? '' : 's'}</span>`
                 : '';
@@ -1387,9 +1581,9 @@ const App = {
             >
                 ← Previous
             </button>
-            <span class="page-info">Page ${page} of ${totalPages} (${total} items)</span>
+            <span class="page-info">Page ${page} of ${total_pages} (${total} items)</span>
             <button 
-                ${page >= totalPages ? 'disabled' : ''} 
+                ${page >= total_pages ? 'disabled' : ''} 
                 onclick="App.goToPage(${page + 1})"
                 aria-label="Next page"
             >
@@ -1453,6 +1647,13 @@ const App = {
             this.state.filters.sort = sort || 'name';
             this.state.filters.order = order || 'asc';
         }
+
+        // Favorites only
+        if (params.has('favorites')) {
+            this.state.filters.favoritesOnly = params.get('favorites') === '1';
+        } else {
+            this.state.filters.favoritesOnly = false;
+        }
     },
 
     /**
@@ -1472,6 +1673,12 @@ const App = {
         // Sort select
         if (this.elements.sortSelect) {
             this.elements.sortSelect.value = `${this.state.filters.sort}-${this.state.filters.order}`;
+        }
+
+        // Favorites only button
+        if (this.elements.favoritesOnlyBtn) {
+            this.elements.favoritesOnlyBtn.classList.toggle('active', this.state.filters.favoritesOnly);
+            this.elements.favoritesOnlyBtn.setAttribute('aria-pressed', this.state.filters.favoritesOnly);
         }
 
         // Tag filters
@@ -1504,6 +1711,11 @@ const App = {
         // Only include sort if not default
         if (this.state.filters.sort !== 'name' || this.state.filters.order !== 'asc') {
             params.set('sort', `${this.state.filters.sort}-${this.state.filters.order}`);
+        }
+
+        // Favorites only
+        if (this.state.filters.favoritesOnly) {
+            params.set('favorites', '1');
         }
 
         const url = params.toString() ? `?${params.toString()}` : window.location.pathname;
