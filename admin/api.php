@@ -7,91 +7,22 @@
 
 declare(strict_types=1);
 
-require_once dirname(__DIR__) . '/includes/init.php';
-require_once dirname(__DIR__) . '/includes/auth.php';
-require_once dirname(__DIR__) . '/includes/functions.php';
-require_once dirname(__DIR__) . '/includes/image.php';
-
-// Set JSON content type
-header('Content-Type: application/json');
-
-/**
- * Send success response
- */
-function jsonSuccess(mixed $data = null, ?string $message = null): never
-{
-    $response = ['success' => true];
-    if ($data !== null) {
-        $response['data'] = $data;
-    }
-    if ($message !== null) {
-        $response['message'] = $message;
-    }
-    echo json_encode($response);
-    exit;
-}
-
-/**
- * Send error response
- */
-function jsonError(string $message, int $code = 400): never
-{
-    http_response_code($code);
-    echo json_encode(['success' => false, 'error' => $message]);
-    exit;
-}
+require_once __DIR__ . '/../includes/init.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/image.php';
+require_once __DIR__ . '/../includes/submissions.php';
+require_once __DIR__ . '/../includes/api.php';
+require_once __DIR__ . '/../includes/api-controller.php';
 
 // Require admin authentication
 requireAdmin();
 
-// Check database connection
-global $pdo;
-if ($pdo === null) {
-    jsonError('Database connection failed', 500);
-}
-
-// Get request info
-$method = requestMethod();
-$action = $_GET['action'] ?? '';
-
-/**
- * Verify CSRF token for state-changing operations
- * For JSON requests, token can be in the body or header
- */
-function verifyRequestCsrf(): bool
-{
-    // Skip for GET requests (read-only)
-    if (requestMethod() === 'GET') {
-        return true;
-    }
-    
-    // Check for token in JSON body
-    $input = getJsonInput();
-    if ($input && isset($input['csrf_token'])) {
-        return verifyCsrfToken($input['csrf_token']);
-    }
-    
-    // Check for token in POST data
-    if (isset($_POST['csrf_token'])) {
-        return verifyCsrfToken($_POST['csrf_token']);
-    }
-    
-    // Check for token in header (for AJAX)
-    $headerToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
-    if ($headerToken) {
-        return verifyCsrfToken($headerToken);
-    }
-    
-    // For same-origin requests with SameSite=Lax cookies, 
-    // the session cookie provides CSRF protection
-    // But we'll still require token for maximum security
-    return false;
-}
-
-// Verify CSRF for all POST/DELETE requests
-if ($method !== 'GET' && !verifyRequestCsrf()) {
-    jsonError('Invalid or missing CSRF token', 403);
-}
+// Initialize common API patterns (headers, DB connection, CSRF, request info)
+$api = initializeApi();
+$method = $api['method'];
+$action = $api['action'];
+$pdo = $api['pdo'];
 
 try {
     switch ($action) {
@@ -101,37 +32,24 @@ try {
         // =============================================
 
         case 'furniture/list':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('GET');
 
-            $page = max(1, (int) ($_GET['page'] ?? 1));
-            $result = getFurnitureList($page, 50);
+            $page = max(1, getQueryInt('page', 1));
+            $result = getFurnitureList($pdo, $page, 50);
             jsonSuccess($result);
             break;
 
         case 'furniture/get':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('GET');
 
-            $id = (int) ($_GET['id'] ?? 0);
-            if ($id <= 0) {
-                jsonError('Invalid furniture ID');
-            }
-
-            $item = getFurnitureById($id);
-            if (!$item) {
-                jsonError('Furniture not found', 404);
-            }
+            $id = getQueryInt('id', 0);
+            $item = requireFurniture($pdo, $id);
 
             jsonSuccess($item);
             break;
 
         case 'furniture/create':
-            if ($method !== 'POST') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('POST');
 
             $input = getJsonInput() ?? $_POST;
             $validation = validateFurnitureInput($input);
@@ -140,30 +58,21 @@ try {
                 jsonError(implode(', ', $validation['errors']));
             }
 
-            $id = createFurniture($validation['data']);
+            $id = createFurniture($pdo, $validation['data']);
             
-            // Process image if URL provided - download, resize, convert to WebP
+            // Process image if URL provided
             $imageUrl = $validation['data']['image_url'] ?? null;
-            if ($imageUrl && filter_var($imageUrl, FILTER_VALIDATE_URL)) {
-                $localPath = processImageFromUrl($imageUrl, $id);
-                if ($localPath) {
-                    // Update with local processed image path
-                    updateFurnitureImage($id, $localPath);
-                }
-            }
+            $processor = new ImageProcessor();
+            $processor->processFurnitureImage($pdo, $id, $imageUrl);
             
             jsonSuccess(['id' => $id], 'Furniture created successfully');
             break;
 
         case 'furniture/update':
-            if ($method !== 'POST') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('POST');
 
-            $id = (int) ($_GET['id'] ?? 0);
-            if ($id <= 0) {
-                jsonError('Invalid furniture ID');
-            }
+            $id = getQueryInt('id', 0);
+            $currentItem = requireFurniture($pdo, $id);
 
             $input = getJsonInput() ?? $_POST;
             $validation = validateFurnitureInput($input);
@@ -171,55 +80,46 @@ try {
             if (!$validation['valid']) {
                 jsonError(implode(', ', $validation['errors']));
             }
-
-            // Get current item to check if image changed
-            $currentItem = getFurnitureById($id);
             $newImageUrl = $validation['data']['image_url'] ?? null;
             $oldImageUrl = $currentItem['image_url'] ?? null;
             
-            // Process new image if URL changed and is external
-            if ($newImageUrl && $newImageUrl !== $oldImageUrl && filter_var($newImageUrl, FILTER_VALIDATE_URL)) {
-                $localPath = processImageFromUrl($newImageUrl, $id);
+            // Process new image if URL changed
+            if ($newImageUrl && $newImageUrl !== $oldImageUrl) {
+                $processor = new ImageProcessor();
+                $localPath = $processor->processFurnitureImage($pdo, $id, $newImageUrl, $oldImageUrl);
                 if ($localPath) {
-                    // Delete old local image if exists
-                    if ($oldImageUrl && str_starts_with($oldImageUrl, '/images/furniture/')) {
-                        deleteImageFile($oldImageUrl);
-                    }
                     // Use local processed image
                     $validation['data']['image_url'] = $localPath;
                 }
             }
 
-            if (!updateFurniture($id, $validation['data'])) {
-                jsonError('Failed to update furniture');
+            try {
+                updateFurniture($pdo, $id, $validation['data']);
+                jsonSuccess(null, 'Furniture updated successfully');
+            } catch (RuntimeException $e) {
+                jsonError('Failed to update furniture: ' . $e->getMessage());
             }
-
-            jsonSuccess(null, 'Furniture updated successfully');
             break;
 
         case 'furniture/delete':
-            if ($method !== 'POST' && $method !== 'DELETE') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethods(['POST', 'DELETE']);
 
-            $id = (int) ($_GET['id'] ?? 0);
-            if ($id <= 0) {
-                jsonError('Invalid furniture ID');
-            }
+            $id = getQueryInt('id', 0);
+            // Verify furniture exists before attempting deletion
+            requireFurniture($pdo, $id);
 
-            if (!deleteFurniture($id)) {
-                jsonError('Failed to delete furniture');
+            try {
+                deleteFurniture($pdo, $id);
+                jsonSuccess(null, 'Furniture deleted successfully');
+            } catch (RuntimeException $e) {
+                jsonError('Failed to delete furniture: ' . $e->getMessage());
             }
-
-            jsonSuccess(null, 'Furniture deleted successfully');
             break;
 
         case 'furniture/batch-delete':
-            if ($method !== 'POST') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('POST');
 
-            $input = getJsonInput();
+            $input = getJsonInput() ?? $_POST;
             $ids = $input['ids'] ?? [];
             
             if (empty($ids) || !is_array($ids)) {
@@ -229,8 +129,14 @@ try {
             $deleted = 0;
             foreach ($ids as $id) {
                 $id = (int) $id;
-                if ($id > 0 && deleteFurniture($id)) {
-                    $deleted++;
+                if ($id > 0) {
+                    try {
+                        deleteFurniture($pdo, $id);
+                        $deleted++;
+                    } catch (RuntimeException $e) {
+                        // Log error but continue with other deletions
+                        error_log("Failed to delete furniture {$id}: " . $e->getMessage());
+                    }
                 }
             }
 
@@ -242,69 +148,66 @@ try {
         // =============================================
 
         case 'categories/list':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
-            jsonSuccess(getCategories());
+            requireMethod('GET');
+            jsonSuccess(getCategories($pdo));
             break;
 
         case 'categories/get':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('GET');
 
-            $id = (int) ($_GET['id'] ?? 0);
+            $id = getQueryInt('id', 0);
             if ($id <= 0) {
-                jsonError('Invalid category ID');
+                jsonError(ERROR_INVALID_ID);
             }
 
-            $category = getCategoryById($id);
+            $category = getCategoryById($pdo, $id);
             if (!$category) {
-                jsonError('Category not found', 404);
+                jsonError(ERROR_NOT_FOUND, 404);
             }
 
             jsonSuccess($category);
             break;
 
         case 'categories/create':
-            if ($method !== 'POST') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('POST');
 
             $input = getJsonInput() ?? $_POST;
-            $name = trim($input['name'] ?? '');
+            $name = isset($input['name']) ? (string) $input['name'] : '';
             
-            if (empty($name)) {
-                jsonError('Category name is required');
+            $nameResult = Validator::categoryName($name);
+            if (!$nameResult['valid']) {
+                jsonError($nameResult['error']);
             }
 
-            $id = createCategory([
-                'name' => $name,
+            $id = createCategory($pdo, [
+                'name' => $nameResult['data'],
                 'icon' => $input['icon'] ?? '📁',
-                'sort_order' => (int) ($input['sort_order'] ?? 0),
+                'sort_order' => isset($input['sort_order']) ? (int) $input['sort_order'] : 0,
             ]);
 
             jsonSuccess(['id' => $id], 'Category created successfully');
             break;
 
         case 'categories/update':
-            if ($method !== 'POST') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('POST');
 
-            $id = (int) ($_GET['id'] ?? 0);
+            $id = getQueryInt('id', 0);
             if ($id <= 0) {
-                jsonError('Invalid category ID');
+                jsonError(ERROR_INVALID_ID);
             }
 
             $input = getJsonInput() ?? $_POST;
             $data = [];
 
             if (isset($input['name'])) {
-                $data['name'] = trim($input['name']);
+                $nameResult = Validator::categoryName((string) $input['name']);
+                if (!$nameResult['valid']) {
+                    jsonError($nameResult['error']);
+                }
+                $data['name'] = $nameResult['data'];
             }
             if (isset($input['icon'])) {
-                $data['icon'] = $input['icon'];
+                $data['icon'] = (string) $input['icon'];
             }
             if (isset($input['sort_order'])) {
                 $data['sort_order'] = (int) $input['sort_order'];
@@ -314,43 +217,40 @@ try {
                 jsonError('No data to update');
             }
 
-            if (!updateCategory($id, $data)) {
-                jsonError('Failed to update category');
+            try {
+                updateCategory($pdo, $id, $data);
+                jsonSuccess(null, 'Category updated successfully');
+            } catch (RuntimeException $e) {
+                jsonError('Failed to update category: ' . $e->getMessage());
             }
-
-            jsonSuccess(null, 'Category updated successfully');
             break;
 
         case 'categories/delete':
-            if ($method !== 'POST' && $method !== 'DELETE') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethods(['POST', 'DELETE']);
 
-            $id = (int) ($_GET['id'] ?? 0);
+            $id = getQueryInt('id', 0);
             if ($id <= 0) {
-                jsonError('Invalid category ID');
+                jsonError(ERROR_INVALID_ID);
             }
 
-            if (!deleteCategory($id)) {
-                jsonError('Cannot delete category with furniture items');
+            try {
+                deleteCategory($pdo, $id);
+                jsonSuccess(null, 'Category deleted successfully');
+            } catch (RuntimeException $e) {
+                jsonError('Cannot delete category: ' . $e->getMessage());
             }
-
-            jsonSuccess(null, 'Category deleted successfully');
             break;
 
         case 'categories/reorder':
-            if ($method !== 'POST') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('POST');
 
-            $input = getJsonInput();
+            $input = getJsonInput() ?? $_POST;
             $order = $input['order'] ?? [];
             
             if (empty($order) || !is_array($order)) {
                 jsonError('Invalid order data');
             }
 
-            global $pdo;
             $stmt = $pdo->prepare('UPDATE categories SET sort_order = ? WHERE id = ?');
             
             foreach ($order as $item) {
@@ -366,66 +266,63 @@ try {
         // =============================================
 
         case 'tag-groups/list':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
-            jsonSuccess(getTagGroups());
+            requireMethod('GET');
+            jsonSuccess(getTagGroups($pdo));
             break;
 
         case 'tag-groups/get':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('GET');
 
-            $id = (int) ($_GET['id'] ?? 0);
+            $id = getQueryInt('id', 0);
             if ($id <= 0) {
-                jsonError('Invalid tag group ID');
+                jsonError(ERROR_INVALID_ID);
             }
 
-            $group = getTagGroupById($id);
+            $group = getTagGroupById($pdo, $id);
             if (!$group) {
-                jsonError('Tag group not found', 404);
+                jsonError(ERROR_NOT_FOUND, 404);
             }
 
             jsonSuccess($group);
             break;
 
         case 'tag-groups/create':
-            if ($method !== 'POST') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('POST');
 
             $input = getJsonInput() ?? $_POST;
-            $name = trim($input['name'] ?? '');
+            $name = isset($input['name']) ? (string) $input['name'] : '';
             
-            if (empty($name)) {
-                jsonError('Tag group name is required');
+            $nameResult = Validator::tagGroupName($name);
+            if (!$nameResult['valid']) {
+                jsonError($nameResult['error']);
             }
 
-            $id = createTagGroup([
-                'name' => $name,
+            $id = createTagGroup($pdo, [
+                'name' => $nameResult['data'],
                 'color' => $input['color'] ?? '#6b7280',
-                'sort_order' => (int) ($input['sort_order'] ?? 0),
+                'sort_order' => isset($input['sort_order']) ? (int) $input['sort_order'] : 0,
             ]);
 
             jsonSuccess(['id' => $id], 'Tag group created successfully');
             break;
 
         case 'tag-groups/update':
-            if ($method !== 'POST') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('POST');
 
-            $id = (int) ($_GET['id'] ?? 0);
+            $id = getQueryInt('id', 0);
             if ($id <= 0) {
-                jsonError('Invalid tag group ID');
+                jsonError(ERROR_INVALID_ID);
             }
 
             $input = getJsonInput() ?? $_POST;
             $data = [];
 
             if (isset($input['name'])) {
-                $data['name'] = trim($input['name']);
+                $nameResult = Validator::tagGroupName((string) $input['name']);
+                if (!$nameResult['valid']) {
+                    jsonError($nameResult['error']);
+                }
+                $data['name'] = $nameResult['data'];
             }
             if (isset($input['color'])) {
                 $data['color'] = $input['color'];
@@ -438,43 +335,40 @@ try {
                 jsonError('No data to update');
             }
 
-            if (!updateTagGroup($id, $data)) {
-                jsonError('Failed to update tag group');
+            try {
+                updateTagGroup($pdo, $id, $data);
+                jsonSuccess(null, 'Tag group updated successfully');
+            } catch (RuntimeException $e) {
+                jsonError('Failed to update tag group: ' . $e->getMessage());
             }
-
-            jsonSuccess(null, 'Tag group updated successfully');
             break;
 
         case 'tag-groups/delete':
-            if ($method !== 'POST' && $method !== 'DELETE') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethods(['POST', 'DELETE']);
 
-            $id = (int) ($_GET['id'] ?? 0);
+            $id = getQueryInt('id', 0);
             if ($id <= 0) {
-                jsonError('Invalid tag group ID');
+                jsonError(ERROR_INVALID_ID);
             }
 
-            if (!deleteTagGroup($id)) {
-                jsonError('Failed to delete tag group');
+            try {
+                deleteTagGroup($pdo, $id);
+                jsonSuccess(null, 'Tag group deleted successfully');
+            } catch (RuntimeException $e) {
+                jsonError('Failed to delete tag group: ' . $e->getMessage());
             }
-
-            jsonSuccess(null, 'Tag group deleted successfully');
             break;
 
         case 'tag-groups/reorder':
-            if ($method !== 'POST') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('POST');
 
-            $input = getJsonInput();
+            $input = getJsonInput() ?? $_POST;
             $order = $input['order'] ?? [];
             
             if (empty($order) || !is_array($order)) {
                 jsonError('Invalid order data');
             }
 
-            global $pdo;
             $stmt = $pdo->prepare('UPDATE tag_groups SET sort_order = ? WHERE id = ?');
             
             foreach ($order as $item) {
@@ -489,33 +383,28 @@ try {
         // =============================================
 
         case 'tags/list':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
-            jsonSuccess(getTags());
+            requireMethod('GET');
+            jsonSuccess(getTags($pdo));
             break;
 
         case 'tags/grouped':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
-            jsonSuccess(getTagsGrouped());
+            requireMethod('GET');
+            jsonSuccess(getTagsGrouped($pdo));
             break;
 
         case 'tags/create':
-            if ($method !== 'POST') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('POST');
 
             $input = getJsonInput() ?? $_POST;
-            $name = trim($input['name'] ?? '');
+            $name = isset($input['name']) ? (string) $input['name'] : '';
             
-            if (empty($name)) {
-                jsonError('Tag name is required');
+            $nameResult = Validator::tagName($name);
+            if (!$nameResult['valid']) {
+                jsonError($nameResult['error']);
             }
 
-            $id = createTag([
-                'name' => $name,
+            $id = createTag($pdo, [
+                'name' => $nameResult['data'],
                 'color' => $input['color'] ?? '#6b7280',
                 'group_id' => isset($input['group_id']) && $input['group_id'] !== '' ? (int) $input['group_id'] : null,
             ]);
@@ -524,20 +413,22 @@ try {
             break;
 
         case 'tags/update':
-            if ($method !== 'POST') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('POST');
 
-            $id = (int) ($_GET['id'] ?? 0);
+            $id = getQueryInt('id', 0);
             if ($id <= 0) {
-                jsonError('Invalid tag ID');
+                jsonError(ERROR_INVALID_ID);
             }
 
             $input = getJsonInput() ?? $_POST;
             $data = [];
 
             if (isset($input['name'])) {
-                $data['name'] = trim($input['name']);
+                $nameResult = Validator::tagName((string) $input['name']);
+                if (!$nameResult['valid']) {
+                    jsonError($nameResult['error']);
+                }
+                $data['name'] = $nameResult['data'];
             }
             if (isset($input['color'])) {
                 $data['color'] = $input['color'];
@@ -550,28 +441,28 @@ try {
                 jsonError('No data to update');
             }
 
-            if (!updateTag($id, $data)) {
-                jsonError('Failed to update tag');
+            try {
+                updateTag($pdo, $id, $data);
+                jsonSuccess(null, 'Tag updated successfully');
+            } catch (RuntimeException $e) {
+                jsonError('Failed to update tag: ' . $e->getMessage());
             }
-
-            jsonSuccess(null, 'Tag updated successfully');
             break;
 
         case 'tags/delete':
-            if ($method !== 'POST' && $method !== 'DELETE') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethods(['POST', 'DELETE']);
 
-            $id = (int) ($_GET['id'] ?? 0);
+            $id = getQueryInt('id', 0);
             if ($id <= 0) {
-                jsonError('Invalid tag ID');
+                jsonError(ERROR_INVALID_ID);
             }
 
-            if (!deleteTag($id)) {
-                jsonError('Failed to delete tag');
+            try {
+                deleteTag($pdo, $id);
+                jsonSuccess(null, 'Tag deleted successfully');
+            } catch (RuntimeException $e) {
+                jsonError('Failed to delete tag: ' . $e->getMessage());
             }
-
-            jsonSuccess(null, 'Tag deleted successfully');
             break;
 
         // =============================================
@@ -579,50 +470,46 @@ try {
         // =============================================
 
         case 'users/list':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('GET');
 
-            $page = max(1, (int) ($_GET['page'] ?? 1));
-            $result = getUsers($page, 50);
+            $page = max(1, getQueryInt('page', 1));
+            $result = getUsers($pdo, $page, 50);
             jsonSuccess($result);
             break;
 
         case 'users/ban':
-            if ($method !== 'POST') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('POST');
 
-            $id = (int) ($_GET['id'] ?? 0);
+            $id = getQueryInt('id', 0);
             if ($id <= 0) {
-                jsonError('Invalid user ID');
+                jsonError(ERROR_INVALID_ID);
             }
 
             $input = getJsonInput() ?? $_POST;
-            $reason = trim($input['reason'] ?? '');
+            $reason = isset($input['reason']) ? trim((string) $input['reason']) : '';
 
-            if (!banUser($id, $reason ?: null)) {
-                jsonError('Failed to ban user');
+            try {
+                banUser($pdo, $id, $reason ?: null);
+                jsonSuccess(null, 'User banned successfully');
+            } catch (RuntimeException $e) {
+                jsonError('Failed to ban user: ' . $e->getMessage());
             }
-
-            jsonSuccess(null, 'User banned successfully');
             break;
 
         case 'users/unban':
-            if ($method !== 'POST') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('POST');
 
-            $id = (int) ($_GET['id'] ?? 0);
+            $id = getQueryInt('id', 0);
             if ($id <= 0) {
-                jsonError('Invalid user ID');
+                jsonError(ERROR_INVALID_ID);
             }
 
-            if (!unbanUser($id)) {
-                jsonError('Failed to unban user');
+            try {
+                unbanUser($pdo, $id);
+                jsonSuccess(null, 'User unbanned successfully');
+            } catch (RuntimeException $e) {
+                jsonError('Failed to unban user: ' . $e->getMessage());
             }
-
-            jsonSuccess(null, 'User unbanned successfully');
             break;
 
         // =============================================
@@ -630,9 +517,7 @@ try {
         // =============================================
 
         case 'import':
-            if ($method !== 'POST') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('POST');
 
             $input = getJsonInput() ?? $_POST;
             $csvContent = $input['csv'] ?? '';
@@ -641,7 +526,7 @@ try {
                 jsonError('No CSV content provided');
             }
 
-            $result = parseCsvImport($csvContent);
+            $result = parseCsvImport($pdo, $csvContent);
 
             if (!empty($result['errors'])) {
                 jsonError('Import errors: ' . implode('; ', array_slice($result['errors'], 0, 5)));
@@ -649,20 +534,17 @@ try {
 
             $imported = 0;
             $imagesProcessed = 0;
+            $processor = new ImageProcessor();
             
             foreach ($result['items'] as $item) {
                 try {
-                    $furnitureId = createFurniture($item);
+                    $furnitureId = createFurniture($pdo, $item);
                     $imported++;
                     
                     // Process image if URL provided
                     $imageUrl = $item['image_url'] ?? null;
-                    if ($imageUrl && filter_var($imageUrl, FILTER_VALIDATE_URL)) {
-                        $localPath = processImageFromUrl($imageUrl, $furnitureId);
-                        if ($localPath) {
-                            updateFurnitureImage($furnitureId, $localPath);
-                            $imagesProcessed++;
-                        }
+                    if ($processor->processFurnitureImage($pdo, $furnitureId, $imageUrl)) {
+                        $imagesProcessed++;
                     }
                 } catch (Exception $e) {
                     error_log("Import error: " . $e->getMessage());
@@ -678,11 +560,9 @@ try {
             break;
 
         case 'export':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('GET');
 
-            $csv = exportFurnitureCsv();
+            $csv = exportFurnitureCsv($pdo);
             
             // Return as downloadable file
             header('Content-Type: text/csv');
@@ -695,11 +575,9 @@ try {
         // =============================================
 
         case 'stats':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('GET');
 
-            jsonSuccess(getDashboardStats());
+            jsonSuccess(getDashboardStats($pdo));
             break;
 
         // =============================================
@@ -707,30 +585,87 @@ try {
         // =============================================
 
         case 'admins/create':
-            if ($method !== 'POST') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('POST');
 
             $input = getJsonInput() ?? $_POST;
-            $username = trim($input['username'] ?? '');
+            $username = isset($input['username']) ? (string) $input['username'] : '';
             $password = $input['password'] ?? '';
 
-            if (empty($username) || strlen($username) < 3) {
-                jsonError('Username must be at least 3 characters');
+            // Validate username
+            $usernameResult = Validator::username($username, 3, 50);
+            if (!$usernameResult['valid']) {
+                jsonError($usernameResult['error']);
             }
+            $username = $usernameResult['data'];
 
-            if (empty($password) || strlen($password) < 8) {
-                jsonError('Password must be at least 8 characters');
+            // Validate password
+            $passwordResult = Validator::password($password, 8, 255);
+            if (!$passwordResult['valid']) {
+                jsonError($passwordResult['error']);
             }
 
             try {
-                $id = createAdmin($username, $password);
+                $id = createAdmin($pdo, $username, $password);
                 jsonSuccess(['id' => $id], 'Admin created successfully');
             } catch (PDOException $e) {
                 if ($e->getCode() == 23000) {
                     jsonError('Username already exists');
                 }
                 throw $e;
+            }
+            break;
+
+        // =============================================
+        // SUBMISSIONS ENDPOINTS
+        // =============================================
+
+        case 'submissions/list':
+            requireMethod('GET');
+
+            $status = getQuery('status', null);
+            $page = max(1, getQueryInt('page', 1));
+            $result = getSubmissions($pdo, $page, 20, $status);
+            jsonSuccess($result);
+            break;
+
+        case 'submissions/approve':
+            requireMethod('POST');
+
+            $id = getQueryInt('id', 0);
+            if ($id <= 0) {
+                jsonError(ERROR_INVALID_ID);
+            }
+
+            $admin = getCurrentAdmin();
+            $adminId = (int) $admin['id'];
+
+            try {
+                approveSubmission($pdo, $id, $adminId);
+                jsonSuccess(null, 'Submission approved and furniture created/updated');
+            } catch (RuntimeException $e) {
+                jsonError('Failed to approve submission: ' . $e->getMessage());
+            }
+            break;
+
+        case 'submissions/reject':
+            requireMethod('POST');
+
+            $id = getQueryInt('id', 0);
+            if ($id <= 0) {
+                jsonError(ERROR_INVALID_ID);
+            }
+
+            $input = getJsonInput() ?? $_POST;
+            $notes = isset($input['notes']) ? trim((string) $input['notes']) : '';
+
+            $admin = getCurrentAdmin();
+            $adminId = (int) $admin['id'];
+
+            try {
+                rejectSubmission($pdo, $id, $adminId, $notes ?: null);
+                jsonSuccess(null, 'Submission rejected');
+            } catch (RuntimeException $e) {
+                jsonError('Failed to reject submission: ' . $e->getMessage());
             }
             break;
 
