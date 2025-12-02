@@ -62,3 +62,43 @@ function csrfToken(): string
     return generateCsrfToken();
 }
 
+/**
+ * Verify CSRF token for API requests
+ * 
+ * Checks for token in:
+ * 1. JSON request body (csrf_token field)
+ * 2. POST data (csrf_token field)
+ * 3. HTTP header (X-CSRF-Token)
+ * 
+ * GET requests are always allowed (read-only operations).
+ * 
+ * @return bool True if token is valid or request is GET, false otherwise
+ */
+function verifyApiCsrf(): bool
+{
+    // Skip for GET requests (read-only)
+    if (requestMethod() === 'GET') {
+        return true;
+    }
+    
+    // Check for token in JSON body
+    $input = getJsonInput();
+    if ($input && isset($input['csrf_token'])) {
+        return verifyCsrfToken($input['csrf_token']);
+    }
+    
+    // Check for token in POST data
+    if (isset($_POST['csrf_token'])) {
+        return verifyCsrfToken($_POST['csrf_token']);
+    }
+    
+    // Check for token in header (for AJAX)
+    $headerToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
+    if ($headerToken) {
+        return verifyCsrfToken($headerToken);
+    }
+    
+    // No valid token found
+    return false;
+}
+
