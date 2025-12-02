@@ -68,13 +68,9 @@ $pageTitle = isset($pageTitle) ? "{$pageTitle} - {$appName}" : $appName;
                     <span class="icon-moon">🌙</span>
                 </button>
                 <?php if ($currentUser): ?>
-                    <button class="export-favorites-btn" id="export-favorites" title="Export favorites">
-                        📥 Export
-                    </button>
-                    <div class="user-info">
-                        Welcome, <strong><?= e($currentUser['main_character'] ?? $currentUser['username']) ?></strong>
-                        <a href="/logout.php" class="btn-logout">Logout</a>
-                    </div>
+                    <a href="/dashboard/" class="btn-dashboard" title="My Dashboard">
+                        📊 Dashboard
+                    </a>
                 <?php else: ?>
                     <a href="/login.php" class="btn-login">
                         Login with GTA World
