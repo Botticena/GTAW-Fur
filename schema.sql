@@ -82,6 +82,8 @@ CREATE TABLE IF NOT EXISTS furniture (
     INDEX idx_name (name),
     INDEX idx_category (category_id),
     INDEX idx_price (price),
+    INDEX idx_created_at (created_at),
+    INDEX idx_updated_at (updated_at),
     FULLTEXT idx_search (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -144,7 +146,8 @@ CREATE TABLE IF NOT EXISTS favorites (
         ON DELETE CASCADE ON UPDATE CASCADE,
     
     INDEX idx_user (user_id),
-    INDEX idx_furniture (furniture_id)
+    INDEX idx_furniture (furniture_id),
+    INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================
@@ -157,6 +160,94 @@ CREATE TABLE IF NOT EXISTS admins (
     password_hash VARCHAR(255) NOT NULL,
     last_login TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================
+-- COLLECTIONS
+-- User-created furniture collections/wishlists
+-- =============================================
+CREATE TABLE IF NOT EXISTS collections (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    slug VARCHAR(100) NOT NULL,
+    description TEXT DEFAULT NULL,
+    is_public BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    CONSTRAINT chk_description_length CHECK (CHAR_LENGTH(description) <= 5000),
+    
+    CONSTRAINT fk_collection_user 
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    
+    UNIQUE KEY uk_user_slug (user_id, slug),
+    INDEX idx_user (user_id),
+    INDEX idx_public (is_public),
+    INDEX idx_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================
+-- COLLECTION_ITEMS
+-- Furniture items within collections
+-- =============================================
+CREATE TABLE IF NOT EXISTS collection_items (
+    collection_id INT UNSIGNED NOT NULL,
+    furniture_id INT UNSIGNED NOT NULL,
+    sort_order INT UNSIGNED DEFAULT 0,
+    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    PRIMARY KEY (collection_id, furniture_id),
+    
+    CONSTRAINT fk_ci_collection 
+        FOREIGN KEY (collection_id) REFERENCES collections(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_ci_furniture 
+        FOREIGN KEY (furniture_id) REFERENCES furniture(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    
+    INDEX idx_furniture (furniture_id),
+    INDEX idx_sort (collection_id, sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================
+-- SUBMISSIONS
+-- User-submitted furniture additions/edits
+-- =============================================
+CREATE TABLE IF NOT EXISTS submissions (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    type ENUM('new', 'edit') NOT NULL DEFAULT 'new',
+    furniture_id INT UNSIGNED DEFAULT NULL COMMENT 'For edit submissions, references existing furniture',
+    
+    -- Submission data (JSON for flexibility)
+    data JSON NOT NULL COMMENT 'Contains name, category_id, price, image_url, tags array',
+    
+    -- Status tracking
+    status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
+    admin_notes TEXT DEFAULT NULL COMMENT 'Feedback from admin on rejection',
+    reviewed_by INT UNSIGNED DEFAULT NULL,
+    reviewed_at TIMESTAMP NULL,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    CONSTRAINT fk_submission_user 
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_submission_furniture 
+        FOREIGN KEY (furniture_id) REFERENCES furniture(id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT fk_submission_admin 
+        FOREIGN KEY (reviewed_by) REFERENCES admins(id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+    
+    INDEX idx_user (user_id),
+    INDEX idx_status (status),
+    INDEX idx_type (type),
+    INDEX idx_created (created_at),
+    INDEX idx_pending (status, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================
