@@ -5,8 +5,8 @@
 
 declare(strict_types=1);
 
-require_once dirname(__DIR__) . '/includes/init.php';
-require_once dirname(__DIR__) . '/includes/auth.php';
+require_once __DIR__ . '/../includes/init.php';
+require_once __DIR__ . '/../includes/auth.php';
 
 $error = '';
 $appName = config('app.name', 'GTAW Furniture Catalog');
@@ -19,19 +19,24 @@ if (isAdminLoggedIn()) {
 // Handle login form submission
 if (requestMethod() === 'POST') {
     // Verify CSRF token
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+    if (!verifyCsrfToken(getPost('csrf_token', ''))) {
         $error = 'Invalid request. Please try again.';
     } elseif (isAdminLoginRateLimited()) {
         $error = 'Too many failed attempts. Please wait 15 minutes.';
     } else {
-        $username = trim($_POST['username'] ?? '');
-        $password = $_POST['password'] ?? '';
+        $username = getPost('username', '');
+        $password = getPost('password', '');
         
         if (empty($username) || empty($password)) {
             $error = 'Please enter both username and password.';
             recordFailedAdminLogin();
         } else {
-            $admin = verifyAdminCredentials($username, $password);
+            try {
+                $pdo = getDb();
+            } catch (RuntimeException $e) {
+                throw new RuntimeException('Database connection not available');
+            }
+            $admin = verifyAdminCredentials($pdo, $username, $password);
             
             if ($admin) {
                 clearAdminLoginRateLimit();
@@ -86,7 +91,7 @@ $csrfToken = generateCsrfToken();
                     required 
                     autofocus
                     autocomplete="username"
-                    value="<?= e($_POST['username'] ?? '') ?>"
+                    value="<?= e(getPost('username', '')) ?>"
                 >
             </div>
             
