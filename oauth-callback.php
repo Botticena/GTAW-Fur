@@ -48,11 +48,18 @@ function oauthError(string $message): never
     exit;
 }
 
+// Rate limiting for OAuth callback attempts (per IP)
+$clientIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+if (isRateLimited('oauth_callback', 10, 300, $clientIp)) { // 10 attempts per 5 minutes per IP
+    oauthError('Too many login attempts. Please try again in a few minutes.');
+}
+
 // 1. Verify state parameter (CSRF protection)
-$state = $_GET['state'] ?? '';
+$state = getQuery('state', '');
 $storedState = $_SESSION['oauth_state'] ?? '';
 
 if (empty($state) || empty($storedState) || !hash_equals($storedState, $state)) {
+    recordRateLimitAttempt('oauth_callback', $clientIp);
     oauthError('Invalid state parameter. Please try logging in again.');
 }
 
@@ -61,12 +68,12 @@ unset($_SESSION['oauth_state']);
 
 // 2. Check for errors from OAuth provider
 if (isset($_GET['error'])) {
-    $errorDesc = $_GET['error_description'] ?? $_GET['error'];
+    $errorDesc = getQuery('error_description', getQuery('error', ''));
     oauthError("Authorization denied: {$errorDesc}");
 }
 
 // 3. Check for authorization code
-$code = $_GET['code'] ?? '';
+$code = getQuery('code', '');
 if (empty($code)) {
     oauthError('Authorization code not received.');
 }
@@ -74,12 +81,14 @@ if (empty($code)) {
 // 4. Exchange code for access token
 $tokenResponse = exchangeCodeForToken($code);
 if (!$tokenResponse || !isset($tokenResponse['access_token'])) {
+    recordRateLimitAttempt('oauth_callback', $clientIp);
     oauthError('Failed to obtain access token. Please try again.');
 }
 
 // 5. Fetch user data from GTAW API
 $userData = fetchGtawUserData($tokenResponse['access_token']);
 if (!$userData || !isset($userData['user'])) {
+    recordRateLimitAttempt('oauth_callback', $clientIp);
     oauthError('Failed to retrieve user data. Please try again.');
 }
 
@@ -88,6 +97,7 @@ $gtawUser = $userData['user'];
 
 $gtawId = (int) ($gtawUser['id'] ?? 0);
 if ($gtawId <= 0) {
+    recordRateLimitAttempt('oauth_callback', $clientIp);
     oauthError('Invalid user data received.');
 }
 
@@ -110,7 +120,13 @@ if (!empty($gtawUser['character']) && is_array($gtawUser['character'])) {
 
 // 7. Create or update user in our database
 try {
-    $user = createOrUpdateUser($gtawId, $username, $gtawRole, $mainCharacter);
+    $pdo = getDb();
+} catch (RuntimeException $e) {
+    throw new RuntimeException('Database connection not available');
+}
+
+try {
+    $user = createOrUpdateUser($pdo, $gtawId, $username, $gtawRole, $mainCharacter);
 } catch (Exception $e) {
     error_log("Failed to create/update user: " . $e->getMessage());
     oauthError('Failed to process login. Please try again.');
@@ -124,6 +140,9 @@ if (!empty($user['is_banned'])) {
 
 // 9. Create session (access token is NOT stored)
 createUserSession($user);
+
+// Clear rate limit on successful OAuth
+clearRateLimit('oauth_callback', $clientIp);
 
 // 10. Redirect to home page
 redirect('/');
