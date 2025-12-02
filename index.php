@@ -11,8 +11,7 @@ require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/functions.php';
 
 // Check if database is configured
-global $pdo;
-$isConfigured = $pdo !== null;
+$isConfigured = Database::isConfigured();
 
 // Set page title
 $pageTitle = 'Browse Furniture';
@@ -75,6 +74,12 @@ require_once __DIR__ . '/templates/header.php';
                         <option value="newest-desc">Newest First</option>
                     </select>
                 </div>
+                
+                <?php if ($currentUser): ?>
+                <button type="button" id="favorites-only" class="btn-favorites-filter" aria-pressed="false">
+                    ❤️ Favorites only
+                </button>
+                <?php endif; ?>
                 
                 <button type="button" id="clear-filters" class="btn-clear-filters" style="display: none;">
                     Clear All Filters
