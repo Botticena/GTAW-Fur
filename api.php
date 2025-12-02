@@ -11,42 +11,14 @@ declare(strict_types=1);
 require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/api.php';
+require_once __DIR__ . '/includes/api-controller.php';
 
-// Set JSON content type
-header('Content-Type: application/json');
-
-/**
- * Send success response
- */
-function jsonSuccess(mixed $data, ?array $pagination = null): never
-{
-    $response = ['success' => true, 'data' => $data];
-    if ($pagination !== null) {
-        $response['pagination'] = $pagination;
-    }
-    echo json_encode($response);
-    exit;
-}
-
-/**
- * Send error response
- */
-function jsonError(string $message, int $code = 400): never
-{
-    http_response_code($code);
-    echo json_encode(['success' => false, 'error' => $message]);
-    exit;
-}
-
-// Check database connection
-global $pdo;
-if ($pdo === null) {
-    jsonError('Database connection failed', 500);
-}
-
-// Get request info
-$method = requestMethod();
-$action = $_GET['action'] ?? '';
+// Initialize common API patterns (headers, DB connection, CSRF, request info)
+$api = initializeApi();
+$method = $api['method'];
+$action = $api['action'];
+$pdo = $api['pdo'];
 
 // Route requests
 try {
@@ -57,87 +29,89 @@ try {
         // =============================================
 
         case 'furniture':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
+            requireMethod('GET');
+
+            $page = max(1, getQueryInt('page', 1));
+            $perPage = min(MAX_ITEMS_PER_PAGE, max(1, getQueryInt('per_page', 24)));
+            $category = getQuery('category', null);
+            $category = $category !== null && $category !== '' ? $category : null;
+            $tagsStr = getQuery('tags', '');
+            $tags = $tagsStr !== '' 
+                ? array_filter(array_map('trim', explode(',', $tagsStr))) 
+                : [];
+            $sort = getQuery('sort', 'name');
+            $sort = in_array($sort, ['name', 'price', 'newest']) ? $sort : 'name';
+            $order = strtolower(getQuery('order', 'asc')) === 'desc' ? 'desc' : 'asc';
+
+            // Favorites only filter
+            $favoritesOnly = !empty(getQuery('favorites_only', ''));
+            $userFavoritesId = null;
+            if ($favoritesOnly) {
+                $userFavoritesId = getCurrentUserId();
+                if (!$userFavoritesId) {
+                    jsonError(ERROR_LOGIN_REQUIRED . ' for favorites filter', 401);
+                }
             }
 
-            $page = max(1, (int) ($_GET['page'] ?? 1));
-            $perPage = min(100, max(1, (int) ($_GET['per_page'] ?? 24)));
-            $category = !empty($_GET['category']) ? trim($_GET['category']) : null;
-            $tags = isset($_GET['tags']) && $_GET['tags'] !== '' 
-                ? array_filter(array_map('trim', explode(',', $_GET['tags']))) 
-                : [];
-            $sort = in_array($_GET['sort'] ?? '', ['name', 'price', 'newest']) 
-                ? $_GET['sort'] 
-                : 'name';
-            $order = strtolower($_GET['order'] ?? 'asc') === 'desc' ? 'desc' : 'asc';
-
-            $result = getFurnitureList($page, $perPage, $category, $tags, $sort, $order);
-            jsonSuccess($result['items'], $result['pagination']);
+            $result = getFurnitureList($pdo, $page, $perPage, $category, $tags, $sort, $order, $userFavoritesId);
+            jsonSuccess($result['items'] ?? [], null, $result['pagination'] ?? null);
             break;
 
         case 'furniture/search':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('GET');
 
-            $query = trim($_GET['q'] ?? '');
+            $query = getQuery('q', '');
             if (strlen($query) < 2) {
                 jsonError('Search query must be at least 2 characters');
             }
 
-            $page = max(1, (int) ($_GET['page'] ?? 1));
-            $perPage = min(100, max(1, (int) ($_GET['per_page'] ?? 24)));
+            $page = max(1, getQueryInt('page', 1));
+            $perPage = min(MAX_ITEMS_PER_PAGE, max(1, getQueryInt('per_page', 24)));
 
-            $result = searchFurniture($query, $page, $perPage);
-            jsonSuccess($result['items'], $result['pagination']);
+            // Favorites only filter
+            $favoritesOnly = !empty(getQuery('favorites_only', ''));
+            $userFavoritesId = null;
+            if ($favoritesOnly) {
+                $userFavoritesId = getCurrentUserId();
+                if (!$userFavoritesId) {
+                    jsonError(ERROR_LOGIN_REQUIRED . ' for favorites filter', 401);
+                }
+            }
+
+            $result = searchFurniture($pdo, $query, $page, $perPage, $userFavoritesId);
+            jsonSuccess($result['items'] ?? [], null, $result['pagination'] ?? null);
             break;
 
         case 'furniture/single':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('GET');
 
-            $id = (int) ($_GET['id'] ?? 0);
-            if ($id <= 0) {
-                jsonError('Invalid furniture ID');
-            }
-
-            $item = getFurnitureById($id);
-            if (!$item) {
-                jsonError('Furniture not found', 404);
-            }
+            $id = getQueryInt('id', 0);
+            $item = requireFurniture($pdo, $id);
 
             // Add favorite status if user is logged in
             $userId = getCurrentUserId();
             if ($userId) {
-                $item['is_favorited'] = isFavorited($userId, $id);
+                $item['is_favorited'] = isFavorited($pdo, $userId, $id);
             }
 
             jsonSuccess($item);
             break;
 
         case 'categories':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
-            jsonSuccess(getCategories());
+            requireMethod('GET');
+            jsonSuccess(getCategories($pdo));
             break;
 
         case 'tags':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('GET');
             // Return grouped structure for frontend filtering UI
-            jsonSuccess(getTagsGrouped());
+            jsonSuccess(getTagsGrouped($pdo));
             break;
         
         case 'tags/flat':
             // Return flat list (for backwards compatibility or simple use cases)
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
-            jsonSuccess(getTags());
+            requireMethod('GET');
+            jsonSuccess(getTags($pdo));
             break;
 
         // =============================================
@@ -149,60 +123,88 @@ try {
 
             if ($method === 'GET') {
                 if (!$userId) {
-                    jsonError('Authentication required', 401);
+                    jsonError(ERROR_AUTH_REQUIRED, 401);
                 }
-                jsonSuccess(getUserFavorites($userId));
+                jsonSuccess(getUserFavorites($pdo, $userId));
             }
 
             if ($method === 'POST') {
                 if (!$userId) {
-                    jsonError('Authentication required', 401);
+                    jsonError(ERROR_AUTH_REQUIRED, 401);
                 }
 
-                $input = getJsonInput();
-                $furnitureId = (int) ($input['furniture_id'] ?? 0);
+                // Rate limiting for favorites (per user)
+                withRateLimit(
+                    'api_favorites',
+                    RATE_LIMIT_FAVORITES['max'],
+                    RATE_LIMIT_FAVORITES['window'],
+                    function () use ($pdo, $userId) {
+                        $input = getJsonInput();
+                        $furnitureId = (int) ($input['furniture_id'] ?? 0);
 
-                if ($furnitureId <= 0) {
-                    jsonError('Invalid furniture ID');
-                }
+                        $idResult = Validator::furnitureId($furnitureId);
+                        if (!$idResult['valid']) {
+                            jsonError($idResult['error']);
+                        }
+                        $furnitureId = $idResult['data'];
 
-                if (addFavorite($userId, $furnitureId)) {
-                    jsonSuccess(['message' => 'Added to favorites']);
-                } else {
-                    jsonError('Already in favorites or furniture not found');
-                }
+                        try {
+                            if (addFavorite($pdo, $userId, $furnitureId)) {
+                                jsonSuccess(null, 'Added to favorites');
+                            } else {
+                                jsonError('Already in favorites or ' . strtolower(ERROR_NOT_FOUND));
+                            }
+                        } catch (RuntimeException $e) {
+                            jsonError('Failed to add favorite: ' . $e->getMessage());
+                        }
+                    },
+                    (string) $userId
+                );
             }
 
             if ($method === 'DELETE') {
                 if (!$userId) {
-                    jsonError('Authentication required', 401);
+                    jsonError(ERROR_AUTH_REQUIRED, 401);
                 }
 
-                $input = getJsonInput();
-                $furnitureId = (int) ($input['furniture_id'] ?? 0);
+                // Rate limiting for favorites (per user)
+                withRateLimit(
+                    'api_favorites',
+                    RATE_LIMIT_FAVORITES['max'],
+                    RATE_LIMIT_FAVORITES['window'],
+                    function () use ($pdo, $userId) {
+                        $input = getJsonInput();
+                        $furnitureId = isset($input['furniture_id']) ? (int) $input['furniture_id'] : 0;
 
-                if ($furnitureId <= 0) {
-                    jsonError('Invalid furniture ID');
-                }
+                        $idResult = Validator::furnitureId($furnitureId);
+                        if (!$idResult['valid']) {
+                            jsonError($idResult['error']);
+                        }
+                        $furnitureId = $idResult['data'];
 
-                removeFavorite($userId, $furnitureId);
-                jsonSuccess(['message' => 'Removed from favorites']);
+                        try {
+                            removeFavorite($pdo, $userId, $furnitureId);
+                            jsonSuccess(null, 'Removed from favorites');
+                        } catch (RuntimeException $e) {
+                            jsonError('Failed to remove favorite: ' . $e->getMessage());
+                        }
+                    },
+                    (string) $userId
+                );
             }
 
             jsonError('Method not allowed', 405);
             break;
 
         case 'user':
-            if ($method !== 'GET') {
-                jsonError('Method not allowed', 405);
-            }
+            requireMethod('GET');
 
             if (!isLoggedIn()) {
                 jsonError('Authentication required', 401);
             }
 
             $user = getCurrentUser();
-            $user['favorites_count'] = countUserFavorites((int) $_SESSION['user_id']);
+            $user['favorites_count'] = countUserFavorites($pdo, (int) $_SESSION['user_id']);
             jsonSuccess($user);
             break;
 
