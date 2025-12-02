@@ -5,10 +5,10 @@
 
 declare(strict_types=1);
 
-require_once dirname(__DIR__, 2) . '/includes/auth.php';
+require_once __DIR__ . '/../../includes/auth.php';
 
 $admin = getCurrentAdmin();
-$currentPage = $_GET['page'] ?? 'dashboard';
+$currentPage = getQuery('page', 'dashboard');
 $appName = config('app.name', 'GTAW Furniture Catalog');
 $pageTitle = isset($pageTitle) ? "{$pageTitle} - Admin" : "Admin - {$appName}";
 ?>
@@ -96,6 +96,24 @@ $pageTitle = isset($pageTitle) ? "{$pageTitle} - Admin" : "Admin - {$appName}";
                         <a href="/admin/?page=users" class="<?= $currentPage === 'users' ? 'active' : '' ?>">
                             <span class="nav-icon">👥</span>
                             Users
+                        </a>
+                    </li>
+                    <li>
+                        <?php 
+                        require_once __DIR__ . '/../../includes/submissions.php';
+                        try {
+                            $pdo = getDb();
+                            $pendingCount = getPendingSubmissionsCount($pdo);
+                        } catch (RuntimeException $e) {
+                            $pendingCount = 0;
+                        }
+                        ?>
+                        <a href="/admin/?page=submissions" class="<?= $currentPage === 'submissions' ? 'active' : '' ?>">
+                            <span class="nav-icon">📝</span>
+                            Submissions
+                            <?php if ($pendingCount > 0): ?>
+                            <span class="nav-badge"><?= $pendingCount ?></span>
+                            <?php endif; ?>
                         </a>
                     </li>
                     
