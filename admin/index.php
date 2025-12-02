@@ -7,24 +7,32 @@
 
 declare(strict_types=1);
 
-require_once dirname(__DIR__) . '/includes/init.php';
-require_once dirname(__DIR__) . '/includes/auth.php';
-require_once dirname(__DIR__) . '/includes/functions.php';
+require_once __DIR__ . '/../includes/init.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/submissions.php';
 
 // Require admin authentication
 requireAdmin();
 
+// Get database connection
+try {
+    $pdo = getDb();
+} catch (RuntimeException $e) {
+    throw new RuntimeException('Database connection not available');
+}
+
 // Get current page
-$page = $_GET['page'] ?? 'dashboard';
-$action = $_GET['action'] ?? 'list';
-$id = (int) ($_GET['id'] ?? 0);
+$page = getQuery('page', 'dashboard');
+$action = getQuery('action', 'list');
+$id = getQueryInt('id', 0);
 
 // Messages
-$success = $_GET['success'] ?? null;
-$error = $_GET['error'] ?? null;
+$success = getQuery('success', null);
+$error = getQuery('error', null);
 
 // Include header
-require_once dirname(__DIR__) . '/templates/admin/header.php';
+require_once __DIR__ . '/../templates/admin/header.php';
 ?>
 
 <?php if ($success): ?>
@@ -39,51 +47,59 @@ require_once dirname(__DIR__) . '/templates/admin/header.php';
 // Route to appropriate view
 switch ($page) {
     case 'dashboard':
-        renderDashboard();
+        renderDashboard($pdo);
         break;
     
     case 'furniture':
         if ($action === 'edit' && $id > 0) {
-            renderFurnitureEdit($id);
+            renderFurnitureEdit($pdo, $id);
         } elseif ($action === 'add') {
-            renderFurnitureAdd();
+            renderFurnitureAdd($pdo);
         } else {
-            renderFurnitureList();
+            renderFurnitureList($pdo);
         }
         break;
     
     case 'categories':
         if ($action === 'edit' && $id > 0) {
-            renderCategoryEdit($id);
+            renderCategoryEdit($pdo, $id);
         } elseif ($action === 'add') {
             renderCategoryAdd();
         } else {
-            renderCategoryList();
+            renderCategoryList($pdo);
         }
         break;
     
     case 'tag-groups':
         if ($action === 'edit' && $id > 0) {
-            renderTagGroupEdit($id);
+            renderTagGroupEdit($pdo, $id);
         } elseif ($action === 'add') {
             renderTagGroupAdd();
         } else {
-            renderTagGroupList();
+            renderTagGroupList($pdo);
         }
         break;
     
     case 'tags':
         if ($action === 'edit' && $id > 0) {
-            renderTagEdit($id);
+            renderTagEdit($pdo, $id);
         } elseif ($action === 'add') {
-            renderTagAdd();
+            renderTagAdd($pdo);
         } else {
-            renderTagList();
+            renderTagList($pdo);
         }
         break;
     
     case 'users':
-        renderUserList();
+        renderUserList($pdo);
+        break;
+    
+    case 'submissions':
+        if ($action === 'view' && $id > 0) {
+            renderSubmissionDetail($pdo, $id);
+        } else {
+            renderSubmissionList($pdo);
+        }
         break;
     
     case 'import':
@@ -95,20 +111,22 @@ switch ($page) {
         break;
     
     default:
-        renderDashboard();
+        renderDashboard($pdo);
 }
 ?>
 
-<?php require_once dirname(__DIR__) . '/templates/admin/footer.php'; ?>
+<?php require_once __DIR__ . '/../templates/admin/footer.php'; ?>
 
 <?php
 // =============================================
 // VIEW FUNCTIONS
 // =============================================
 
-function renderDashboard(): void
+function renderDashboard(PDO $pdo): void
 {
-    $stats = getDashboardStats();
+    $stats = getDashboardStats($pdo);
+    $pendingSubmissions = getSubmissions($pdo, 1, 5, SUBMISSION_STATUS_PENDING);
+    $pendingCount = getPendingSubmissionsCount($pdo);
     ?>
     <div class="admin-header">
         <h1>📊 Dashboard</h1>
@@ -144,7 +162,49 @@ function renderDashboard(): void
             <p class="stat-value"><?= number_format($stats['total_favorites']) ?></p>
             <p class="stat-label">Total Favorites</p>
         </div>
+        
+        <div class="stat-card" style="<?= $pendingCount > 0 ? 'border-color: var(--warning);' : '' ?>">
+            <div class="stat-icon">📝</div>
+            <p class="stat-value"><?= number_format($pendingCount) ?></p>
+            <p class="stat-label">Pending Submissions</p>
+        </div>
     </div>
+    
+    <?php if ($pendingCount > 0): ?>
+    <h2 style="display: flex; align-items: center; gap: var(--spacing-sm);">
+        Pending Submissions
+        <span class="badge badge-warning"><?= $pendingCount ?></span>
+    </h2>
+    <div class="data-table-container" style="margin-bottom: var(--spacing-xl);">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width: 80px;">Type</th>
+                    <th>Submitted By</th>
+                    <th>Name</th>
+                    <th style="width: 140px;">Date</th>
+                    <th style="width: 100px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($pendingSubmissions['items'] as $sub): ?>
+                <tr>
+                    <td><span class="badge"><?= $sub['type'] === SUBMISSION_TYPE_NEW ? '✨ New' : '✏️ Edit' ?></span></td>
+                    <td><strong><?= e($sub['submitter_username']) ?></strong></td>
+                    <td><?= e($sub['data']['name'] ?? 'Untitled') ?></td>
+                    <td><?= date('M j, Y', strtotime($sub['created_at'])) ?></td>
+                    <td class="actions">
+                        <a href="/admin/?page=submissions&action=view&id=<?= $sub['id'] ?>" class="btn btn-sm btn-primary">Review</a>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <p style="margin-bottom: var(--spacing-xl);">
+        <a href="/admin/?page=submissions" class="btn">View All Submissions →</a>
+    </p>
+    <?php endif; ?>
     
     <?php if (!empty($stats['recent_users'])): ?>
     <h2>Recent Users</h2>
@@ -172,10 +232,10 @@ function renderDashboard(): void
     <?php
 }
 
-function renderFurnitureList(): void
+function renderFurnitureList(PDO $pdo): void
 {
-    $currentPage = max(1, (int) ($_GET['p'] ?? 1));
-    $result = getFurnitureList($currentPage, 50);
+    $currentPage = max(1, getQueryInt('p', 1));
+    $result = getFurnitureList($pdo, $currentPage, 50);
     $items = $result['items'];
     $pagination = $result['pagination'];
     $csrfToken = generateCsrfToken();
@@ -239,10 +299,10 @@ function renderFurnitureList(): void
     <?php
 }
 
-function renderFurnitureAdd(): void
+function renderFurnitureAdd(PDO $pdo): void
 {
-    $categories = getCategories();
-    $tagsGrouped = getTagsGrouped();
+    $categories = getCategories($pdo);
+    $tagsGrouped = getTagsGrouped($pdo);
     $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
@@ -338,16 +398,16 @@ function renderFurnitureAdd(): void
     <?php
 }
 
-function renderFurnitureEdit(int $id): void
+function renderFurnitureEdit(PDO $pdo, int $id): void
 {
-    $item = getFurnitureById($id);
+    $item = getFurnitureById($pdo, $id);
     if (!$item) {
         echo '<div class="alert alert-error">Furniture not found</div>';
         return;
     }
     
-    $categories = getCategories();
-    $tagsGrouped = getTagsGrouped();
+    $categories = getCategories($pdo);
+    $tagsGrouped = getTagsGrouped($pdo);
     $itemTagIds = array_column($item['tags'] ?? [], 'id');
     $csrfToken = generateCsrfToken();
     
@@ -447,9 +507,9 @@ function renderFurnitureEdit(int $id): void
     <?php
 }
 
-function renderCategoryList(): void
+function renderCategoryList(PDO $pdo): void
 {
-    $categories = getCategories();
+    $categories = getCategories($pdo);
     $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
@@ -539,9 +599,9 @@ function renderCategoryAdd(): void
     <?php
 }
 
-function renderCategoryEdit(int $id): void
+function renderCategoryEdit(PDO $pdo, int $id): void
 {
-    $category = getCategoryById($id);
+    $category = getCategoryById($pdo, $id);
     if (!$category) {
         echo '<div class="alert alert-error">Category not found</div>';
         return;
@@ -586,9 +646,9 @@ function renderCategoryEdit(int $id): void
 // TAG GROUP VIEWS
 // =============================================
 
-function renderTagGroupList(): void
+function renderTagGroupList(PDO $pdo): void
 {
-    $groups = getTagGroups();
+    $groups = getTagGroups($pdo);
     $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
@@ -608,12 +668,12 @@ function renderTagGroupList(): void
                     <th>Color</th>
                     <th>Tags Count</th>
                     <th>Sort Order</th>
-                    <th style="width: 100px">Actions</th>
+                    <th style="width: 140px">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 <?php 
-                $allTags = getTags();
+                $allTags = getTags($pdo);
                 $tagCounts = [];
                 foreach ($allTags as $tag) {
                     $gid = $tag['group_id'] ?? 0;
@@ -640,7 +700,7 @@ function renderTagGroupList(): void
                                 data-url="/admin/api.php?action=tag-groups/delete&id=<?= $group['id'] ?>"
                                 data-csrf="<?= e($csrfToken) ?>"
                                 data-confirm="Delete this tag group? Tags will become ungrouped.">
-                            ×
+                            Delete
                         </button>
                     </td>
                 </tr>
@@ -695,9 +755,9 @@ function renderTagGroupAdd(): void
     <?php
 }
 
-function renderTagGroupEdit(int $id): void
+function renderTagGroupEdit(PDO $pdo, int $id): void
 {
-    $group = getTagGroupById($id);
+    $group = getTagGroupById($pdo, $id);
     if (!$group) {
         echo '<div class="alert alert-error">Tag group not found</div>';
         return;
@@ -746,10 +806,10 @@ function renderTagGroupEdit(int $id): void
 // TAG VIEWS
 // =============================================
 
-function renderTagList(): void
+function renderTagList(PDO $pdo): void
 {
-    $tags = getTags();
-    $groups = getTagGroups();
+    $tags = getTags($pdo);
+    $groups = getTagGroups($pdo);
     $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
@@ -810,9 +870,9 @@ function renderTagList(): void
     <?php
 }
 
-function renderTagAdd(): void
+function renderTagAdd(PDO $pdo): void
 {
-    $groups = getTagGroups();
+    $groups = getTagGroups($pdo);
     $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
@@ -859,15 +919,15 @@ function renderTagAdd(): void
     <?php
 }
 
-function renderTagEdit(int $id): void
+function renderTagEdit(PDO $pdo, int $id): void
 {
-    $tag = getTagById($id);
+    $tag = getTagById($pdo, $id);
     if (!$tag) {
         echo '<div class="alert alert-error">Tag not found</div>';
         return;
     }
     
-    $groups = getTagGroups();
+    $groups = getTagGroups($pdo);
     $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
@@ -914,10 +974,10 @@ function renderTagEdit(int $id): void
     <?php
 }
 
-function renderUserList(): void
+function renderUserList(PDO $pdo): void
 {
-    $currentPage = max(1, (int) ($_GET['p'] ?? 1));
-    $result = getUsers($currentPage, 50);
+    $currentPage = max(1, getQueryInt('p', 1));
+    $result = getUsers($pdo, $currentPage, 50);
     $users = $result['items'];
     $pagination = $result['pagination'];
     ?>
@@ -978,6 +1038,438 @@ function renderUserList(): void
     
     <?php renderPagination($pagination, '/admin/?page=users'); ?>
     <?php
+}
+
+// =============================================
+// SUBMISSION VIEWS
+// =============================================
+
+function renderSubmissionList(PDO $pdo): void
+{
+    $status = getQuery('status', null);
+    $currentPage = max(1, getQueryInt('p', 1));
+    
+    $result = getSubmissions($pdo, $currentPage, 20, $status);
+    $submissions = $result['items'];
+    $pagination = $result['pagination'];
+    $pendingCount = getPendingSubmissionsCount($pdo);
+    $csrfToken = generateCsrfToken();
+    ?>
+    <div class="admin-header">
+        <h1>📝 User Submissions</h1>
+        <div class="actions">
+            <?php if ($pendingCount > 0): ?>
+            <span class="badge badge-warning" style="font-size: 1rem; padding: 0.5rem 1rem;">
+                <?= $pendingCount ?> pending
+            </span>
+            <?php endif; ?>
+        </div>
+    </div>
+    
+    <!-- Status Filter -->
+    <div class="filter-bar" style="margin-bottom: 1rem;">
+        <a href="/admin/?page=submissions" class="btn btn-sm <?= !$status ? 'btn-primary' : '' ?>">All</a>
+        <a href="/admin/?page=submissions&status=<?= SUBMISSION_STATUS_PENDING ?>" class="btn btn-sm <?= $status === SUBMISSION_STATUS_PENDING ? 'btn-primary' : '' ?>">
+            ⏳ Pending
+        </a>
+        <a href="/admin/?page=submissions&status=<?= SUBMISSION_STATUS_APPROVED ?>" class="btn btn-sm <?= $status === SUBMISSION_STATUS_APPROVED ? 'btn-primary' : '' ?>">
+            ✓ Approved
+        </a>
+        <a href="/admin/?page=submissions&status=<?= SUBMISSION_STATUS_REJECTED ?>" class="btn btn-sm <?= $status === SUBMISSION_STATUS_REJECTED ? 'btn-primary' : '' ?>">
+            ✕ Rejected
+        </a>
+    </div>
+    
+    <div class="data-table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width: 60px">ID</th>
+                    <th style="width: 80px">Type</th>
+                    <th>Submitted By</th>
+                    <th>Name</th>
+                    <th style="width: 100px">Status</th>
+                    <th style="width: 140px">Date</th>
+                    <th style="width: 180px">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if (empty($submissions)): ?>
+                <tr>
+                    <td colspan="7" class="empty">No submissions found</td>
+                </tr>
+                <?php else: ?>
+                <?php foreach ($submissions as $sub): ?>
+                <tr data-id="<?= $sub['id'] ?>">
+                    <td><?= $sub['id'] ?></td>
+                    <td>
+                        <span class="badge"><?= $sub['type'] === SUBMISSION_TYPE_NEW ? '✨ New' : '✏️ Edit' ?></span>
+                    </td>
+                    <td>
+                        <strong><?= e($sub['submitter_username']) ?></strong>
+                    </td>
+                    <td>
+                        <?= e($sub['data']['name'] ?? 'Untitled') ?>
+                        <?php if ($sub['type'] === SUBMISSION_TYPE_EDIT && $sub['furniture_name']): ?>
+                        <br><small class="text-muted">Editing: <?= e($sub['furniture_name']) ?></small>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <?= renderAdminStatusBadge($sub['status']) ?>
+                    </td>
+                    <td><?= date('M j, Y H:i', strtotime($sub['created_at'])) ?></td>
+                    <td class="actions">
+                        <a href="/admin/?page=submissions&action=view&id=<?= $sub['id'] ?>" class="btn btn-sm">View</a>
+                        <?php if ($sub['status'] === SUBMISSION_STATUS_PENDING): ?>
+                        <button class="btn btn-sm btn-success" onclick="Admin.approveSubmission(<?= $sub['id'] ?>)">✓</button>
+                        <button class="btn btn-sm btn-danger" onclick="Admin.rejectSubmission(<?= $sub['id'] ?>)">✕</button>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+    
+    <?php 
+    $baseUrl = '/admin/?page=submissions' . ($status ? '&status=' . urlencode($status) : '');
+    renderPagination($pagination, $baseUrl); 
+    ?>
+    <?php
+}
+
+function renderSubmissionDetail(PDO $pdo, int $id): void
+{
+    $submission = getSubmissionById($pdo, $id);
+    if (!$submission) {
+        echo '<div class="alert alert-error">Submission not found</div>';
+        return;
+    }
+    
+    $data = $submission['data'];
+    $category = getCategoryById($pdo, $data['category_id'] ?? 0);
+    $csrfToken = generateCsrfToken();
+    
+    // Get original furniture if this is an edit
+    $originalFurniture = null;
+    if ($submission['type'] === SUBMISSION_TYPE_EDIT && $submission['furniture_id']) {
+        $originalFurniture = getFurnitureById($pdo, $submission['furniture_id']);
+    }
+    ?>
+    <div class="admin-header">
+        <h1>📝 Submission #<?= $id ?></h1>
+        <div class="actions">
+            <a href="/admin/?page=submissions" class="btn">← Back to List</a>
+        </div>
+    </div>
+    
+    <div class="submission-detail">
+        <!-- Status Banner -->
+        <div class="submission-status-banner status-<?= $submission['status'] ?>">
+            <div>
+                <?= renderAdminStatusBadge($submission['status']) ?>
+                <span class="submission-type badge" style="margin-left: 0.5rem;">
+                    <?= $submission['type'] === SUBMISSION_TYPE_NEW ? '✨ New Furniture' : '✏️ Edit Suggestion' ?>
+                </span>
+            </div>
+            <?php if ($submission['status'] === SUBMISSION_STATUS_PENDING): ?>
+            <div class="action-buttons">
+                <button class="btn btn-success" onclick="Admin.approveSubmission(<?= $id ?>)">
+                    ✓ Approve
+                </button>
+                <button class="btn btn-danger" onclick="Admin.rejectSubmission(<?= $id ?>)">
+                    ✕ Reject
+                </button>
+            </div>
+            <?php endif; ?>
+        </div>
+        
+        <!-- Submission Info -->
+        <div class="info-panel">
+            <h3>Submission Information</h3>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="label">Submitted by:</span>
+                    <span class="value"><?= e($submission['submitter_username']) ?></span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Submitted:</span>
+                    <span class="value"><?= date('M j, Y g:i A', strtotime($submission['created_at'])) ?></span>
+                </div>
+                <?php if ($submission['reviewed_at']): ?>
+                <div class="info-item">
+                    <span class="label">Reviewed by:</span>
+                    <span class="value"><?= e($submission['reviewer_username'] ?? '-') ?></span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Reviewed at:</span>
+                    <span class="value"><?= date('M j, Y g:i A', strtotime($submission['reviewed_at'])) ?></span>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+        
+        <!-- Proposed Data -->
+        <div class="data-panel">
+            <h3><?= $submission['type'] === SUBMISSION_TYPE_EDIT ? 'Proposed Changes' : 'Submitted Data' ?></h3>
+            
+            <?php if ($submission['type'] === SUBMISSION_TYPE_EDIT && $originalFurniture): ?>
+            <!-- Diff View for Edits -->
+            <table class="diff-table">
+                <thead>
+                    <tr>
+                        <th>Field</th>
+                        <th>Current</th>
+                        <th>Proposed</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="<?= $originalFurniture['name'] !== $data['name'] ? 'changed' : '' ?>">
+                        <td><strong>Name</strong></td>
+                        <td><?= e($originalFurniture['name']) ?></td>
+                        <td><?= e($data['name'] ?? '') ?></td>
+                    </tr>
+                    <tr class="<?= $originalFurniture['category_id'] !== ($data['category_id'] ?? 0) ? 'changed' : '' ?>">
+                        <td><strong>Category</strong></td>
+                        <td><?= e($originalFurniture['category_name'] ?? '-') ?></td>
+                        <td><?= $category ? e($category['name']) : '-' ?></td>
+                    </tr>
+                    <tr class="<?= $originalFurniture['price'] !== ($data['price'] ?? 0) ? 'changed' : '' ?>">
+                        <td><strong>Price</strong></td>
+                        <td>$<?= number_format($originalFurniture['price']) ?></td>
+                        <td>$<?= number_format($data['price'] ?? 0) ?></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Image</strong></td>
+                        <td>
+                            <?php if ($originalFurniture['image_url']): ?>
+                            <img src="<?= e($originalFurniture['image_url']) ?>" alt="Current" class="thumb">
+                            <?php else: ?>
+                            <span class="text-muted">No image</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if (!empty($data['image_url'])): ?>
+                            <img src="<?= e($data['image_url']) ?>" alt="Proposed" class="thumb">
+                            <?php else: ?>
+                            <span class="text-muted">No change</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php
+                    // Compare tags
+                    $currentTagIds = array_map('intval', array_column($originalFurniture['tags'] ?? [], 'id'));
+                    $proposedTagIds = array_map('intval', $data['tags'] ?? []);
+                    sort($currentTagIds);
+                    sort($proposedTagIds);
+                    $tagsChanged = $currentTagIds !== $proposedTagIds;
+                    $proposedTagsRaw = $data['tags'] ?? [];
+                    ?>
+                    <tr class="<?= $tagsChanged ? 'changed' : '' ?>">
+                        <td><strong>Tags</strong></td>
+                        <td>
+                            <?php if (!empty($originalFurniture['tags'])): ?>
+                                <?php foreach ($originalFurniture['tags'] as $tag): ?>
+                                    <span class="badge" style="background: <?= e($tag['color']) ?>; margin-right: 0.25rem; margin-bottom: 0.25rem; display: inline-block;"><?= e($tag['name']) ?></span>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <span class="text-muted">No tags</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if (!empty($proposedTagsRaw)): ?>
+                                <?php foreach ($proposedTagsRaw as $tagId): ?>
+                                    <?php 
+                                    $tag = getTagById($pdo, (int) $tagId);
+                                    if ($tag):
+                                    ?>
+                                    <span class="badge" style="background: <?= e($tag['color']) ?>; margin-right: 0.25rem; margin-bottom: 0.25rem; display: inline-block;"><?= e($tag['name']) ?></span>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <span class="text-muted">No tags</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <?php if (!empty($data['edit_notes'])): ?>
+            <div class="edit-notes">
+                <h4>User Notes</h4>
+                <p><?= nl2br(e($data['edit_notes'])) ?></p>
+            </div>
+            <?php endif; ?>
+            
+            <?php else: ?>
+            <!-- New Submission View -->
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="label">Name:</span>
+                    <span class="value"><strong><?= e($data['name'] ?? '-') ?></strong></span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Category:</span>
+                    <span class="value"><?= $category ? e($category['icon'] . ' ' . $category['name']) : '-' ?></span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Price:</span>
+                    <span class="value">$<?= number_format($data['price'] ?? 0) ?></span>
+                </div>
+            </div>
+            
+            <?php if (!empty($data['image_url'])): ?>
+            <div class="image-preview">
+                <img src="<?= e($data['image_url']) ?>" alt="Preview" onerror="this.src='/images/placeholder.svg'">
+            </div>
+            <?php endif; ?>
+            
+            <?php if (!empty($data['tags'])): ?>
+            <div class="tags-preview" style="margin-top: 1rem;">
+                <strong>Tags:</strong>
+                <?php 
+                foreach ($data['tags'] as $tagId):
+                    $tag = getTagById($pdo, $tagId);
+                    if ($tag):
+                ?>
+                <span class="badge" style="background: <?= e($tag['color']) ?>"><?= e($tag['name']) ?></span>
+                <?php 
+                    endif;
+                endforeach; 
+                ?>
+            </div>
+            <?php endif; ?>
+            <?php endif; ?>
+        </div>
+        
+        <?php if ($submission['status'] === SUBMISSION_STATUS_REJECTED && $submission['admin_notes']): ?>
+        <div class="rejection-notes">
+            <h3>Rejection Reason</h3>
+            <p><?= nl2br(e($submission['admin_notes'])) ?></p>
+        </div>
+        <?php endif; ?>
+    </div>
+    
+    <style>
+    .submission-detail {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+    }
+    
+    .submission-status-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 1.5rem;
+        background: var(--bg-primary);
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .submission-status-banner .action-buttons {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .info-panel, .data-panel, .rejection-notes, .edit-notes {
+        padding: 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .info-panel:last-child, .data-panel:last-child, .rejection-notes:last-child {
+        border-bottom: none;
+    }
+    
+    .info-panel h3, .data-panel h3 {
+        margin: 0 0 1rem 0;
+        font-size: 1rem;
+        color: var(--text-secondary);
+    }
+    
+    .info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+    }
+    
+    .info-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    
+    .info-item .label {
+        font-size: 0.8rem;
+        color: var(--text-tertiary);
+    }
+    
+    .diff-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    
+    .diff-table th, .diff-table td {
+        padding: 0.75rem;
+        border: 1px solid var(--border-color);
+        text-align: left;
+    }
+    
+    .diff-table th {
+        background: var(--bg-primary);
+        font-weight: 600;
+    }
+    
+    .diff-table tr.changed {
+        background: rgba(245, 158, 11, 0.1);
+    }
+    
+    .diff-table .thumb {
+        max-width: 100px;
+        max-height: 75px;
+        border-radius: var(--radius-sm);
+    }
+    
+    .image-preview img {
+        max-width: 300px;
+        max-height: 200px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-color);
+        margin-top: 1rem;
+    }
+    
+    .rejection-notes {
+        background: rgba(239, 68, 68, 0.05);
+    }
+    
+    .rejection-notes h3 {
+        color: var(--error);
+    }
+    
+    .edit-notes {
+        background: var(--bg-primary);
+        border-radius: var(--radius-md);
+        padding: 1rem;
+        margin-top: 1rem;
+    }
+    
+    .edit-notes h4 {
+        margin: 0 0 0.5rem 0;
+        font-size: 0.875rem;
+    }
+    </style>
+    <?php
+}
+
+function renderAdminStatusBadge(string $status): string
+{
+    return match($status) {
+        SUBMISSION_STATUS_PENDING => '<span class="badge badge-warning">⏳ Pending</span>',
+        SUBMISSION_STATUS_APPROVED => '<span class="badge badge-success">✓ Approved</span>',
+        SUBMISSION_STATUS_REJECTED => '<span class="badge badge-error">✕ Rejected</span>',
+        default => '<span class="badge">' . e($status) . '</span>',
+    };
 }
 
 function renderImport(): void
