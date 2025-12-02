@@ -102,11 +102,11 @@ Go to "My Collections" in your dashboard, find the collection you want to share,
 
 ### Submitting Furniture
 
-Go to your Dashboard, click "Submissions" in the sidebar, then "Submit New Furniture". Fill in the details (name, category, price if you know it, image URL from the GTA World mapping system, and tags if you want), then submit. Submissions are reviewed and added to the catalog if everything looks good!
+Go to your Dashboard, click "Submissions" in the sidebar, then "Submit New Furniture". Fill in the details (name, category, price if you know it, image URL and tags), then submit. Submissions are reviewed and added to the catalog if everything looks good!
 
 ### Suggesting Edits
 
-Find the furniture item, click the image to open the lightbox, then click "Suggest Edit". Make your changes and submit — it'll be reviewed and updated if the changes are correct.
+Find the furniture item, click the image to open the lightbox, then click "Suggest Edit". Make your changes and submit, it'll be reviewed and updated if the changes are correct.
 
 ### Exporting Commands
 
@@ -210,7 +210,6 @@ Privacy is important, so the application is designed to collect minimal data. He
 
 **What it stores:**
 - Your GTA World username (from the login)
-- Your main character name (if available)
 - Your favorite furniture items
 - Your collections and submissions
 
