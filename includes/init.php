@@ -15,7 +15,7 @@ if (basename($_SERVER['PHP_SELF']) === 'init.php') {
 }
 
 // Error reporting (disable display in production)
-$config = @include dirname(__DIR__) . '/config.php';
+$config = @include __DIR__ . '/../config.php';
 if ($config && isset($config['app']['debug']) && $config['app']['debug']) {
     error_reporting(E_ALL);
     ini_set('display_errors', '1');
@@ -53,6 +53,39 @@ require_once __DIR__ . '/db.php';
 // Load CSRF helpers
 require_once __DIR__ . '/csrf.php';
 
+// ============================================
+// APPLICATION CONSTANTS
+// ============================================
+
+/**
+ * Maximum number of items per page in pagination
+ */
+const MAX_ITEMS_PER_PAGE = 100;
+
+/**
+ * Minimum search query length (characters)
+ */
+const MIN_SEARCH_LENGTH = 2;
+
+/**
+ * Maximum image file size in bytes (10MB)
+ */
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+
+/**
+ * Maximum furniture name length (characters)
+ */
+const MAX_FURNITURE_NAME_LENGTH = 255;
+
+/**
+ * Rate limiting constants
+ * Format: ['max' => max_attempts, 'window' => window_seconds]
+ */
+const RATE_LIMIT_FAVORITES = ['max' => 30, 'window' => 60];
+const RATE_LIMIT_COLLECTIONS_CREATE = ['max' => 10, 'window' => 60];
+const RATE_LIMIT_COLLECTIONS_ITEMS = ['max' => 50, 'window' => 60];
+const RATE_LIMIT_SUBMISSIONS_CREATE = ['max' => 5, 'window' => 60];
+
 /**
  * Get configuration value
  */
@@ -61,7 +94,7 @@ function config(string $key, mixed $default = null): mixed
     static $config = null;
     
     if ($config === null) {
-        $configFile = dirname(__DIR__) . '/config.php';
+        $configFile = __DIR__ . '/../config.php';
         if (file_exists($configFile)) {
             $config = require $configFile;
         } else {
@@ -127,6 +160,8 @@ function requestMethod(): string
 
 /**
  * Get JSON input from request body
+ * 
+ * @return array<string, mixed>|null Parsed JSON data or null if invalid/empty
  */
 function getJsonInput(): ?array
 {
@@ -141,5 +176,102 @@ function getJsonInput(): ?array
     }
     
     return $data;
+}
+
+/**
+ * Get input value from GET or POST (checks POST first, then GET)
+ * 
+ * @param string $key Input key
+ * @param mixed $default Default value if key not found
+ * @param bool $trim Whether to trim string values (default: true)
+ * @return mixed Input value or default
+ */
+function getInput(string $key, mixed $default = null, bool $trim = true): mixed
+{
+    $value = $_POST[$key] ?? $_GET[$key] ?? $default;
+    return $trim && is_string($value) ? trim($value) : $value;
+}
+
+/**
+ * Get input value from GET only
+ * 
+ * @param string $key Input key
+ * @param mixed $default Default value if key not found
+ * @param bool $trim Whether to trim string values (default: true)
+ * @return mixed Input value or default
+ */
+function getQuery(string $key, mixed $default = null, bool $trim = true): mixed
+{
+    $value = $_GET[$key] ?? $default;
+    return $trim && is_string($value) ? trim($value) : $value;
+}
+
+/**
+ * Get input value from POST only
+ * 
+ * @param string $key Input key
+ * @param mixed $default Default value if key not found
+ * @param bool $trim Whether to trim string values (default: true)
+ * @return mixed Input value or default
+ */
+function getPost(string $key, mixed $default = null, bool $trim = true): mixed
+{
+    $value = $_POST[$key] ?? $default;
+    return $trim && is_string($value) ? trim($value) : $value;
+}
+
+/**
+ * Get integer input value (from GET or POST)
+ * 
+ * @param string $key Input key
+ * @param int $default Default value if key not found or invalid
+ * @return int Integer value
+ */
+function getInputInt(string $key, int $default = 0): int
+{
+    $value = getInput($key, $default, false);
+    return is_numeric($value) ? (int) $value : $default;
+}
+
+/**
+ * Get integer query parameter (from GET only)
+ * 
+ * @param string $key Input key
+ * @param int $default Default value if key not found or invalid
+ * @return int Integer value
+ */
+function getQueryInt(string $key, int $default = 0): int
+{
+    $value = getQuery($key, $default, false);
+    return is_numeric($value) ? (int) $value : $default;
+}
+
+/**
+ * Get boolean value from an array (typically from POST or normalized input)
+ * 
+ * Handles various boolean representations:
+ * - true, 'true', '1', 1, 'on', 'yes' → true
+ * - false, 'false', '0', 0, '', null, not set → false
+ * 
+ * @param array $source Source array (e.g., $_POST or $input)
+ * @param string $key Array key to check
+ * @param bool $default Default value if key not found
+ * @return bool Boolean value
+ */
+function getInputBool(array $source, string $key, bool $default = false): bool
+{
+    if (!isset($source[$key])) {
+        return $default;
+    }
+    
+    $value = $source[$key];
+    
+    // Handle explicit boolean values
+    if (is_bool($value)) {
+        return $value;
+    }
+    
+    // Handle string/numeric representations
+    return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? $default;
 }
 
