@@ -285,15 +285,15 @@ INSERT INTO `categories` (`id`, `name`, `slug`, `icon`, `sort_order`, `created_a
 -- =============================================
 -- SEED DATA: Default Tag Groups
 -- =============================================
-INSERT INTO tag_groups (name, slug, color, sort_order) VALUES
-('Style / Era', 'style', '#3b82f6', 1),
-('Mood / Atmosphere', 'mood', '#f97316', 2),
-('Size / Presence', 'size', '#22c55e', 3),
-('Form / Placement', 'form', '#14b8a6', 4),
-('Materials / Finish', 'materials', '#6366f1', 5),
-('Color-Oriented', 'color-oriented', '#ec4899', 6),
-('Effects / Behavior', 'effects', '#a855f7', 7),
-('Theme / Use-Case', 'theme', '#6b7280', 8)
+INSERT INTO `tag_groups` (`id`, `name`, `slug`, `color`, `sort_order`, `created_at`) VALUES
+(1, 'Style', 'style', '#3b82f6', 1, '2025-12-01 15:13:05'),
+(2, 'Mood', 'mood', '#f97316', 2, '2025-12-01 15:13:05'),
+(3, 'Size', 'size', '#22c55e', 3, '2025-12-01 15:13:05'),
+(4, 'Placement', 'placement', '#14b8a6', 4, '2025-12-01 15:13:05'),
+(5, 'Materials', 'materials', '#6366f1', 5, '2025-12-01 15:13:05'),
+(6, 'Color', 'color', '#ec4899', 6, '2025-12-01 15:13:05'),
+(7, 'Effects', 'effects', '#a855f7', 7, '2025-12-01 15:13:05'),
+(8, 'Theme', 'theme', '#6b7280', 8, '2025-12-01 15:13:05');
 ON DUPLICATE KEY UPDATE name = VALUES(name);
 
 -- =============================================
