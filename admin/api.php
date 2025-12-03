@@ -18,7 +18,6 @@ require_once __DIR__ . '/../includes/api-controller.php';
 // Require admin authentication
 requireAdmin();
 
-// Initialize common API patterns (headers, DB connection, CSRF, request info)
 $api = initializeApi();
 $method = $api['method'];
 $action = $api['action'];
@@ -60,7 +59,6 @@ try {
 
             $id = createFurniture($pdo, $validation['data']);
             
-            // Process image if URL provided
             $imageUrl = $validation['data']['image_url'] ?? null;
             $processor = new ImageProcessor();
             $processor->processFurnitureImage($pdo, $id, $imageUrl);
@@ -83,7 +81,6 @@ try {
             $newImageUrl = $validation['data']['image_url'] ?? null;
             $oldImageUrl = $currentItem['image_url'] ?? null;
             
-            // Process new image if URL changed
             if ($newImageUrl && $newImageUrl !== $oldImageUrl) {
                 $processor = new ImageProcessor();
                 $localPath = $processor->processFurnitureImage($pdo, $id, $newImageUrl, $oldImageUrl);
@@ -185,6 +182,12 @@ try {
                 'sort_order' => isset($input['sort_order']) ? (int) $input['sort_order'] : 0,
             ]);
 
+            // Invalidate cached categories
+            if (function_exists('apcu_delete')) {
+                apcu_delete('gtaw_categories_v1'); // Legacy
+                apcu_delete('gtaw_categories_v2'); // Current
+            }
+
             jsonSuccess(['id' => $id], 'Category created successfully');
             break;
 
@@ -219,6 +222,10 @@ try {
 
             try {
                 updateCategory($pdo, $id, $data);
+                if (function_exists('apcu_delete')) {
+                    apcu_delete('gtaw_categories_v1'); // Legacy
+                    apcu_delete('gtaw_categories_v2'); // Current
+                }
                 jsonSuccess(null, 'Category updated successfully');
             } catch (RuntimeException $e) {
                 jsonError('Failed to update category: ' . $e->getMessage());
@@ -235,6 +242,10 @@ try {
 
             try {
                 deleteCategory($pdo, $id);
+                if (function_exists('apcu_delete')) {
+                    apcu_delete('gtaw_categories_v1'); // Legacy
+                    apcu_delete('gtaw_categories_v2'); // Current
+                }
                 jsonSuccess(null, 'Category deleted successfully');
             } catch (RuntimeException $e) {
                 jsonError('Cannot delete category: ' . $e->getMessage());
@@ -257,7 +268,9 @@ try {
                 $stmt->execute([(int) $item['order'], (int) $item['id']]);
             }
 
-            // Clear categories cache
+            if (function_exists('apcu_delete')) {
+                apcu_delete('gtaw_categories_v1');
+            }
             jsonSuccess(null, 'Order saved successfully');
             break;
 
@@ -303,6 +316,11 @@ try {
                 'sort_order' => isset($input['sort_order']) ? (int) $input['sort_order'] : 0,
             ]);
 
+            if (function_exists('apcu_delete')) {
+                apcu_delete('gtaw_tag_groups_v1');
+                apcu_delete('gtaw_tags_grouped_v1');
+            }
+
             jsonSuccess(['id' => $id], 'Tag group created successfully');
             break;
 
@@ -337,6 +355,10 @@ try {
 
             try {
                 updateTagGroup($pdo, $id, $data);
+                if (function_exists('apcu_delete')) {
+                    apcu_delete('gtaw_tag_groups_v1');
+                    apcu_delete('gtaw_tags_grouped_v1');
+                }
                 jsonSuccess(null, 'Tag group updated successfully');
             } catch (RuntimeException $e) {
                 jsonError('Failed to update tag group: ' . $e->getMessage());
@@ -353,6 +375,11 @@ try {
 
             try {
                 deleteTagGroup($pdo, $id);
+                if (function_exists('apcu_delete')) {
+                    apcu_delete('gtaw_tag_groups_v1');
+                    apcu_delete('gtaw_tags_grouped_v1');
+                    apcu_delete('gtaw_tags_flat_v1');
+                }
                 jsonSuccess(null, 'Tag group deleted successfully');
             } catch (RuntimeException $e) {
                 jsonError('Failed to delete tag group: ' . $e->getMessage());
@@ -375,6 +402,10 @@ try {
                 $stmt->execute([(int) $item['order'], (int) $item['id']]);
             }
 
+            if (function_exists('apcu_delete')) {
+                apcu_delete('gtaw_tag_groups_v1');
+                apcu_delete('gtaw_tags_grouped_v1');
+            }
             jsonSuccess(null, 'Order saved successfully');
             break;
 
@@ -408,6 +439,11 @@ try {
                 'color' => $input['color'] ?? '#6b7280',
                 'group_id' => isset($input['group_id']) && $input['group_id'] !== '' ? (int) $input['group_id'] : null,
             ]);
+
+            if (function_exists('apcu_delete')) {
+                apcu_delete('gtaw_tags_flat_v1');
+                apcu_delete('gtaw_tags_grouped_v1');
+            }
 
             jsonSuccess(['id' => $id], 'Tag created successfully');
             break;
@@ -443,6 +479,10 @@ try {
 
             try {
                 updateTag($pdo, $id, $data);
+                if (function_exists('apcu_delete')) {
+                    apcu_delete('gtaw_tags_flat_v1');
+                    apcu_delete('gtaw_tags_grouped_v1');
+                }
                 jsonSuccess(null, 'Tag updated successfully');
             } catch (RuntimeException $e) {
                 jsonError('Failed to update tag: ' . $e->getMessage());
@@ -459,6 +499,10 @@ try {
 
             try {
                 deleteTag($pdo, $id);
+                if (function_exists('apcu_delete')) {
+                    apcu_delete('gtaw_tags_flat_v1');
+                    apcu_delete('gtaw_tags_grouped_v1');
+                }
                 jsonSuccess(null, 'Tag deleted successfully');
             } catch (RuntimeException $e) {
                 jsonError('Failed to delete tag: ' . $e->getMessage());
@@ -541,7 +585,6 @@ try {
                     $furnitureId = createFurniture($pdo, $item);
                     $imported++;
                     
-                    // Process image if URL provided
                     $imageUrl = $item['image_url'] ?? null;
                     if ($processor->processFurnitureImage($pdo, $furnitureId, $imageUrl)) {
                         $imagesProcessed++;
@@ -564,7 +607,6 @@ try {
 
             $csv = exportFurnitureCsv($pdo);
             
-            // Return as downloadable file
             header('Content-Type: text/csv');
             header('Content-Disposition: attachment; filename="furniture_export_' . date('Y-m-d') . '.csv"');
             echo $csv;
@@ -669,15 +711,92 @@ try {
             }
             break;
 
+        case 'submissions/bulk-approve':
+            requireMethod('POST');
+
+            $input = getJsonInput() ?? $_POST;
+            $ids = $input['ids'] ?? [];
+            
+            if (!is_array($ids) || empty($ids)) {
+                jsonError('No submission IDs provided');
+            }
+            
+            // Validate and filter IDs (limit to 50 for safety)
+            $ids = array_filter(array_map('intval', array_slice($ids, 0, 50)));
+            
+            if (empty($ids)) {
+                jsonError('No valid submission IDs provided');
+            }
+            
+            $admin = getCurrentAdmin();
+            $adminId = (int) $admin['id'];
+            
+            $approved = 0;
+            $errors = [];
+            
+            foreach ($ids as $id) {
+                try {
+                    approveSubmission($pdo, $id, $adminId);
+                    $approved++;
+                } catch (RuntimeException $e) {
+                    $errors[] = "ID {$id}: " . $e->getMessage();
+                }
+            }
+            
+            jsonSuccess([
+                'approved' => $approved,
+                'errors' => $errors
+            ], "{$approved} submission(s) approved");
+            break;
+
+        case 'submissions/bulk-reject':
+            requireMethod('POST');
+
+            $input = getJsonInput() ?? $_POST;
+            $ids = $input['ids'] ?? [];
+            $notes = isset($input['notes']) ? trim((string) $input['notes']) : '';
+            
+            if (!is_array($ids) || empty($ids)) {
+                jsonError('No submission IDs provided');
+            }
+            
+            // Validate and filter IDs (limit to 50 for safety)
+            $ids = array_filter(array_map('intval', array_slice($ids, 0, 50)));
+            
+            if (empty($ids)) {
+                jsonError('No valid submission IDs provided');
+            }
+            
+            $admin = getCurrentAdmin();
+            $adminId = (int) $admin['id'];
+            
+            $rejected = 0;
+            $errors = [];
+            
+            foreach ($ids as $id) {
+                try {
+                    rejectSubmission($pdo, $id, $adminId, $notes ?: null);
+                    $rejected++;
+                } catch (RuntimeException $e) {
+                    $errors[] = "ID {$id}: " . $e->getMessage();
+                }
+            }
+            
+            jsonSuccess([
+                'rejected' => $rejected,
+                'errors' => $errors
+            ], "{$rejected} submission(s) rejected");
+            break;
+
         default:
             jsonError('Unknown endpoint', 404);
     }
 
 } catch (PDOException $e) {
-    error_log('Admin API Database Error: ' . $e->getMessage());
+    logException('admin_api_db', $e);
     jsonError('Database error', 500);
 } catch (Exception $e) {
-    error_log('Admin API Error: ' . $e->getMessage());
+    logException('admin_api', $e);
     jsonError('Internal server error', 500);
 }
 
