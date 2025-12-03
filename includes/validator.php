@@ -57,6 +57,23 @@ class Validator
     }
 
     /**
+     * Validate category IDs array
+     * 
+     * @param array $categoryIds The category IDs to validate
+     * @return array{valid: bool, error: string|null, data: array<int>}
+     */
+    public static function categoryIds(array $categoryIds): array
+    {
+        $validIds = array_values(array_unique(array_filter(array_map('intval', $categoryIds), fn($id) => $id > 0)));
+        
+        if (empty($validIds)) {
+            return ['valid' => false, 'error' => 'At least one category is required', 'data' => []];
+        }
+        
+        return ['valid' => true, 'error' => null, 'data' => $validIds];
+    }
+
+    /**
      * Validate price
      * 
      * @param int $price The price to validate
@@ -95,26 +112,21 @@ class Validator
         }
         
         if (str_starts_with($imageUrl, '/')) {
-            // Validate relative path - prevent directory traversal
+            // Prevent directory traversal (reject ".." and "\")
             if (str_contains($imageUrl, '..') || str_contains($imageUrl, '\\')) {
                 return ['valid' => false, 'error' => 'Invalid image path: directory traversal not allowed', 'data' => null];
             }
             
-            // Normalize path to check for allowed directories
             $normalizedPath = str_replace('//', '/', $imageUrl);
             
-            // Allow paths starting with /images/furniture/ (processed images)
-            // Also allow other /images/ paths for flexibility (e.g., placeholders)
             if (str_starts_with($normalizedPath, '/images/')) {
                 return ['valid' => true, 'error' => null, 'data' => $imageUrl];
             }
             
-            // Reject other relative paths for security
             return ['valid' => false, 'error' => 'Image path must be in /images/ directory or a valid URL', 'data' => null];
         }
         
         if (filter_var($imageUrl, FILTER_VALIDATE_URL)) {
-            // Only allow HTTP and HTTPS URLs for security
             $scheme = parse_url($imageUrl, PHP_URL_SCHEME);
             if (!in_array(strtolower($scheme), ['http', 'https'], true)) {
                 return ['valid' => false, 'error' => 'Image URL must use HTTP or HTTPS protocol', 'data' => null];
@@ -305,6 +317,8 @@ class Validator
     /**
      * Validate furniture input (composite validation)
      * 
+     * Accepts either category_ids (array) or category_id (single) for backwards compatibility.
+     * 
      * @param array $input Input data to validate
      * @return array{valid: bool, errors: array<string, string>, data: array<string, mixed>}
      */
@@ -321,13 +335,22 @@ class Validator
             $data['name'] = $nameResult['data'];
         }
         
-        // Category validation
-        $categoryId = (int) ($input['category_id'] ?? 0);
-        $categoryResult = self::categoryId($categoryId);
-        if (!$categoryResult['valid']) {
-            $errors['category_id'] = $categoryResult['error'];
+        // Category validation - accept array or single ID
+        if (isset($input['category_ids']) && is_array($input['category_ids'])) {
+            $categoryResult = self::categoryIds($input['category_ids']);
+            if (!$categoryResult['valid']) {
+                $errors['category_ids'] = $categoryResult['error'];
+            } else {
+                $data['category_ids'] = $categoryResult['data'];
+            }
         } else {
-            $data['category_id'] = $categoryResult['data'];
+            $categoryId = (int) ($input['category_id'] ?? 0);
+            $categoryResult = self::categoryId($categoryId);
+            if (!$categoryResult['valid']) {
+                $errors['category_id'] = $categoryResult['error'];
+            } else {
+                $data['category_ids'] = [$categoryResult['data']];
+            }
         }
         
         // Price validation
