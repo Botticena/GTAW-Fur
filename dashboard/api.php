@@ -28,7 +28,6 @@ $method = $api['method'];
 $action = $api['action'];
 $pdo = $api['pdo'];
 
-// Check if user is banned
 $user = getUserById($pdo, $userId);
 if ($user && $user['is_banned']) {
     jsonError('Your account has been banned', 403);
@@ -80,7 +79,6 @@ try {
                     }
 
                     $description = trim($input['description'] ?? '');
-                    // Validate description length (TEXT field, but limit to reasonable size)
                     if ($description !== '' && strlen($description) > 5000) {
                         jsonError('Description is too long (maximum 5000 characters)');
                     }
@@ -116,13 +114,11 @@ try {
             }
             if (isset($input['description'])) {
                 $description = trim($input['description'] ?? '');
-                // Validate description length (TEXT field, but limit to reasonable size)
                 if ($description !== '' && strlen($description) > 5000) {
                     jsonError('Description is too long (maximum 5000 characters)');
                 }
                 $data['description'] = $description !== '' ? $description : null;
             }
-            // Always set is_public (true if present, false if not)
             $data['is_public'] = getInputBool($input, 'is_public', false);
 
             try {
@@ -144,6 +140,74 @@ try {
                 jsonSuccess(null, 'Collection deleted');
             } catch (RuntimeException $e) {
                 jsonError('Failed to delete collection: ' . $e->getMessage());
+            }
+            break;
+
+        case 'collections/duplicate':
+            requireMethod('POST');
+
+            $input = getJsonInput() ?? $_POST;
+            $collectionId = (int)($input['collection_id'] ?? 0);
+            
+            requireCollectionOwnership($pdo, $userId, $collectionId);
+            
+            $stmt = $pdo->prepare('
+                SELECT id, name, description, is_public 
+                FROM collections 
+                WHERE id = ? AND user_id = ?
+            ');
+            $stmt->execute([$collectionId, $userId]);
+            $original = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$original) {
+                jsonError('Collection not found', 404);
+            }
+            
+            $newName = 'Copy of ' . $original['name'];
+            $baseSlug = createSlug($newName);
+            $newSlug = $baseSlug . '-' . substr(uniqid(), -6);
+            
+            $pdo->beginTransaction();
+            
+            try {
+                $stmt = $pdo->prepare('
+                    INSERT INTO collections (user_id, name, slug, description, is_public)
+                    VALUES (?, ?, ?, ?, ?)
+                ');
+                $stmt->execute([
+                    $userId,
+                    $newName,
+                    $newSlug,
+                    $original['description'],
+                    $original['is_public']
+                ]);
+                
+                $newId = (int)$pdo->lastInsertId();
+                
+                // Copy all items with sort order
+                $stmt = $pdo->prepare('
+                    INSERT INTO collection_items (collection_id, furniture_id, sort_order)
+                    SELECT ?, furniture_id, sort_order
+                    FROM collection_items
+                    WHERE collection_id = ?
+                ');
+                $stmt->execute([$newId, $collectionId]);
+                
+                $itemCount = $stmt->rowCount();
+                
+                $pdo->commit();
+                
+                jsonSuccess([
+                    'id' => $newId,
+                    'slug' => $newSlug,
+                    'name' => $newName,
+                    'item_count' => $itemCount,
+                    'message' => 'Collection duplicated successfully'
+                ]);
+            } catch (Exception $e) {
+                $pdo->rollBack();
+                logException('collections_duplicate', $e);
+                jsonError('Failed to duplicate collection', 500);
             }
             break;
 
@@ -236,7 +300,6 @@ try {
                 jsonError('Invalid order array');
             }
 
-            // Validate order array structure
             foreach ($order as $item) {
                 if (!isset($item['id']) || !isset($item['order'])) {
                     jsonError('Invalid order format. Each item must have "id" and "order" fields');
@@ -290,13 +353,11 @@ try {
                     $furnitureId = getQueryInt('furniture_id', 0);
                     $type = $furnitureId > 0 ? SUBMISSION_TYPE_EDIT : SUBMISSION_TYPE_NEW;
                     
-                    // Validate input
                     $validation = validateSubmissionInput($_POST, $type);
                     if (!$validation['valid']) {
                         jsonError(implode(', ', $validation['errors']));
                     }
 
-                    // Create submission
                     if ($type === SUBMISSION_TYPE_EDIT) {
                         $id = submitFurnitureEdit($pdo, $userId, $furnitureId, $validation['data']);
                     } else {
@@ -336,10 +397,10 @@ try {
     }
 
 } catch (PDOException $e) {
-    error_log('Dashboard API Database Error: ' . $e->getMessage());
+    logException('dashboard_api_db', $e);
     jsonError('Database error', 500);
 } catch (Exception $e) {
-    error_log('Dashboard API Error: ' . $e->getMessage());
+    logException('dashboard_api', $e);
     jsonError('Internal server error', 500);
 }
 
