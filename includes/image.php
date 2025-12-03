@@ -15,19 +15,10 @@ if (basename($_SERVER['PHP_SELF']) === 'image.php') {
 }
 
 /**
- * DEPENDENCY NOTE: Circular Dependency Prevention
+ * Circular dependency prevention
  * 
- * This file conditionally requires functions.php to access updateFurnitureImage().
- * 
- * IMPORTANT: functions.php must NEVER require or include image.php, as this would
- * create a circular dependency. The dependency is one-way: image.php → functions.php
- * 
- * If functions.php needs image processing functions, it should call them directly
- * without requiring this file, or the dependency should be refactored.
- * 
- * Current dependency chain:
- * - image.php → functions.php (conditional, only if updateFurnitureImage doesn't exist)
- * - functions.php → (does NOT require image.php) ✓
+ * This file conditionally requires functions.php. functions.php must NEVER
+ * require image.php to avoid circular dependencies.
  */
 if (!function_exists('updateFurnitureImage')) {
     require_once __DIR__ . '/functions.php';
@@ -84,27 +75,23 @@ function isGdAvailable(): bool
  */
 function downloadImageToTemp(string $url): ?string
 {
-    // Validate URL
     if (!filter_var($url, FILTER_VALIDATE_URL)) {
         error_log("Image download: Invalid URL - {$url}");
         return null;
     }
     
-    // Only allow http/https
     $scheme = parse_url($url, PHP_URL_SCHEME);
     if (!in_array(strtolower($scheme), ['http', 'https'])) {
         error_log("Image download: Invalid scheme - {$scheme}");
         return null;
     }
     
-    // Create temp file
     $tempFile = tempnam(sys_get_temp_dir(), 'gtaw_img_');
     if ($tempFile === false) {
         error_log("Image download: Failed to create temp file");
         return null;
     }
     
-    // Download with timeout and size limit
     $context = stream_context_create([
         'http' => [
             'timeout' => 15,
@@ -117,7 +104,6 @@ function downloadImageToTemp(string $url): ?string
         ],
     ]);
     
-    // Use cURL if available for better control
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
@@ -128,7 +114,6 @@ function downloadImageToTemp(string $url): ?string
             CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_USERAGENT => 'GTAW-Furniture-Catalog/1.0',
-            // Limit to MAX_IMAGE_SIZE (10MB)
             CURLOPT_MAXFILESIZE => MAX_IMAGE_SIZE,
         ]);
         
@@ -152,14 +137,12 @@ function downloadImageToTemp(string $url): ?string
         }
     }
     
-    // Check minimum size (likely not a valid image if too small)
     if (strlen($imageData) < 100) {
         error_log("Image download: File too small - " . strlen($imageData) . " bytes");
         @unlink($tempFile);
         return null;
     }
     
-    // Write to temp file
     if (file_put_contents($tempFile, $imageData) === false) {
         error_log("Image download: Failed to write temp file");
         @unlink($tempFile);
@@ -213,46 +196,39 @@ function resizeImage(GdImage $image, int $maxWidth, int $maxHeight = 0): GdImage
     $width = imagesx($image);
     $height = imagesy($image);
     
-    // Calculate new dimensions maintaining aspect ratio
     if ($maxHeight === 0) {
-        // Only constrain by width
         if ($width <= $maxWidth) {
-            return $image; // No resize needed
+            return $image;
         }
         $newWidth = $maxWidth;
         $newHeight = (int) round($height * ($maxWidth / $width));
     } else {
-        // Constrain by both dimensions
         $widthRatio = $maxWidth / $width;
         $heightRatio = $maxHeight / $height;
         $ratio = min($widthRatio, $heightRatio);
         
         if ($ratio >= 1) {
-            return $image; // No resize needed
+            return $image;
         }
         
         $newWidth = (int) round($width * $ratio);
         $newHeight = (int) round($height * $ratio);
     }
     
-    // Create new image with transparency support
     $resized = imagecreatetruecolor($newWidth, $newHeight);
     
-    // Preserve transparency for PNG/GIF
     imagealphablending($resized, false);
     imagesavealpha($resized, true);
     $transparent = imagecolorallocatealpha($resized, 0, 0, 0, 127);
     imagefill($resized, 0, 0, $transparent);
     
-    // High quality resampling
     imagecopyresampled(
         $resized, $image,
         0, 0, 0, 0,
-        $newWidth, $newHeight,
+        $newWidth,         $newHeight,
         $width, $height
     );
     
-    // Free original image memory
     imagedestroy($image);
     
     return $resized;
@@ -268,7 +244,6 @@ function resizeImage(GdImage $image, int $maxWidth, int $maxHeight = 0): GdImage
  */
 function saveAsWebp(GdImage $image, string $outputPath, int $quality = 80): bool
 {
-    // Ensure directory exists
     $dir = dirname($outputPath);
     if (!is_dir($dir)) {
         if (!mkdir($dir, 0755, true)) {
@@ -277,7 +252,6 @@ function saveAsWebp(GdImage $image, string $outputPath, int $quality = 80): bool
         }
     }
     
-    // Convert to true color if needed (for indexed images)
     if (!imageistruecolor($image)) {
         $trueColor = imagecreatetruecolor(imagesx($image), imagesy($image));
         imagecopy($trueColor, $image, 0, 0, 0, 0, imagesx($image), imagesy($image));
@@ -285,7 +259,6 @@ function saveAsWebp(GdImage $image, string $outputPath, int $quality = 80): bool
         $image = $trueColor;
     }
     
-    // Save as WebP
     $success = imagewebp($image, $outputPath, $quality);
     imagedestroy($image);
     
@@ -333,47 +306,38 @@ class ImageProcessor
         int $maxWidth = 800,
         int $quality = 80
     ): ?string {
-        // Check GD availability
         if (!isGdAvailable()) {
             error_log("Image processing: GD library not available or missing WebP support");
             return null;
         }
         
-        // Skip if already a local image
         if (isLocalImage($url)) {
             return null;
         }
         
-        // Download to temp file
         $tempFile = downloadImageToTemp($url);
         if ($tempFile === null) {
             return null;
         }
         
         try {
-            // Load image
             $image = loadImage($tempFile);
             if ($image === null) {
                 return null;
             }
             
-            // Resize if needed
             $image = resizeImage($image, $maxWidth);
             
-            // Generate output path
             $filename = generateImageFilename($furnitureId);
             $outputPath = getImagesDir() . $filename;
             
-            // Save as WebP
             if (!saveAsWebp($image, $outputPath, $quality)) {
                 return null;
             }
             
-            // Return web-accessible path
             return getImagesWebPath() . $filename;
             
         } finally {
-            // Clean up temp file
             @unlink($tempFile);
         }
     }
@@ -405,13 +369,11 @@ class ImageProcessor
             return null;
         }
         
-        // Process image
         $localPath = $this->processFromUrl($imageUrl, $furnitureId);
         if (!$localPath) {
             return null;
         }
         
-        // Update database
         try {
             updateFurnitureImage($pdo, $furnitureId, $localPath);
         } catch (RuntimeException $e) {
@@ -419,7 +381,6 @@ class ImageProcessor
             return null;
         }
         
-        // Delete old image if changed
         if ($oldImageUrl && $oldImageUrl !== $localPath && str_starts_with($oldImageUrl, '/images/furniture/')) {
             $this->deleteImage($oldImageUrl);
         }
@@ -435,7 +396,6 @@ class ImageProcessor
      */
     public function deleteImage(string $imagePath): bool
     {
-        // Only delete local furniture images
         if (!str_starts_with($imagePath, '/images/furniture/')) {
             return false;
         }
@@ -465,7 +425,6 @@ class ImageProcessor
             return 0;
         }
         
-        // Get all image paths from database
         $stmt = $pdo->query('SELECT image_url FROM furniture WHERE image_url IS NOT NULL');
         $dbImages = $stmt->fetchAll(PDO::FETCH_COLUMN);
         $dbFilenames = array_map('basename', $dbImages);
