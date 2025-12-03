@@ -164,7 +164,7 @@ function requireAuth(): void
 {
     if (!isLoggedIn()) {
         if (isAjax()) {
-            jsonError('Authentication required', 401);
+            jsonError(ERROR_AUTH_REQUIRED, 401);
         }
         redirect('/login.php');
     }
@@ -249,7 +249,7 @@ function requireAdmin(): void
 {
     if (!isAdminLoggedIn()) {
         if (isAjax()) {
-            jsonError('Admin authentication required', 401);
+            jsonError(ERROR_ADMIN_REQUIRED, 401);
         }
         redirect('/admin/login.php');
     }
@@ -317,89 +317,245 @@ function destroyAdminSession(): void
 /**
  * Check admin login rate limit
  * Returns true if rate limited, false if allowed
+ * 
+ * Uses the generic rate limiting system with admin-specific parameters.
  */
 function isAdminLoginRateLimited(): bool
 {
-    $key = 'admin_login_attempts';
-    $maxAttempts = 5;
-    $windowSeconds = 900; // 15 minutes
-    
-    $now = time();
-    $attempts = $_SESSION[$key] ?? ['count' => 0, 'first_attempt' => $now];
-    
-    // Reset if window has passed
-    if (($now - $attempts['first_attempt']) >= $windowSeconds) {
-        $_SESSION[$key] = ['count' => 0, 'first_attempt' => $now];
-        return false;
-    }
-    
-    return $attempts['count'] >= $maxAttempts;
+    return isRateLimited('admin_login_attempts', 5, 900); // 5 attempts per 15 minutes
 }
 
 /**
  * Record a failed admin login attempt
+ * 
+ * Uses the generic rate limiting system.
  */
 function recordFailedAdminLogin(): void
 {
-    $key = 'admin_login_attempts';
-    $now = time();
-    
-    if (!isset($_SESSION[$key])) {
-        $_SESSION[$key] = ['count' => 1, 'first_attempt' => $now];
-    } else {
-        $_SESSION[$key]['count']++;
-    }
+    recordRateLimitAttempt('admin_login_attempts');
 }
 
 /**
  * Clear admin login rate limit
+ * 
+ * Uses the generic rate limiting system.
  */
 function clearAdminLoginRateLimit(): void
 {
-    unset($_SESSION['admin_login_attempts']);
+    clearRateLimit('admin_login_attempts');
 }
 
 /**
- * Generic rate limiting function
+ * Get client IP address with proxy support
+ * 
+ * Checks for forwarded headers in a safe order, with validation.
+ * Falls back to REMOTE_ADDR if no valid proxy headers found.
+ * 
+ * @return string Client IP address
+ */
+function getClientIp(): string
+{
+    // Headers to check for forwarded IP (in order of preference)
+    $headers = [
+        'HTTP_CF_CONNECTING_IP',     // Cloudflare
+        'HTTP_X_FORWARDED_FOR',      // Standard proxy header
+        'HTTP_X_REAL_IP',            // Nginx proxy
+        'REMOTE_ADDR'                // Direct connection
+    ];
+    
+    foreach ($headers as $header) {
+        if (!empty($_SERVER[$header])) {
+            // X-Forwarded-For may contain multiple IPs; take the first (client)
+            $ip = $_SERVER[$header];
+            if ($header === 'HTTP_X_FORWARDED_FOR') {
+                $ips = array_map('trim', explode(',', $ip));
+                $ip = $ips[0];
+            }
+            
+            // Validate IP format
+            if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                return $ip;
+            }
+        }
+    }
+    
+    return '0.0.0.0';
+}
+
+/**
+ * Get rate limit storage directory path
+ * 
+ * @return string Path to rate limit storage directory
+ */
+function getRateLimitStoragePath(): string
+{
+    $path = sys_get_temp_dir() . '/gtaw_ratelimit';
+    if (!is_dir($path)) {
+        @mkdir($path, 0750, true);
+    }
+    return $path;
+}
+
+/**
+ * Get IP-based rate limit data from file storage
+ * 
+ * @param string $key Rate limit key
+ * @param string $ip Client IP address
+ * @return array Rate limit data ['count' => int, 'first_attempt' => int]
+ */
+function getIpRateLimitData(string $key, string $ip): array
+{
+    $filename = getRateLimitStoragePath() . '/' . md5($key . '_' . $ip) . '.json';
+    $now = time();
+    
+    if (!file_exists($filename)) {
+        return ['count' => 0, 'first_attempt' => $now];
+    }
+    
+    $content = @file_get_contents($filename);
+    if ($content === false) {
+        return ['count' => 0, 'first_attempt' => $now];
+    }
+    
+    $data = json_decode($content, true);
+    if (!is_array($data) || !isset($data['count']) || !isset($data['first_attempt'])) {
+        return ['count' => 0, 'first_attempt' => $now];
+    }
+    
+    return $data;
+}
+
+/**
+ * Save IP-based rate limit data to file storage
+ * 
+ * Uses LOCK_EX flag for file locking to prevent race conditions.
+ * For high-traffic scenarios, consider using Redis or database-based rate limiting.
+ * 
+ * @param string $key Rate limit key
+ * @param string $ip Client IP address
+ * @param array $data Rate limit data
+ */
+function saveIpRateLimitData(string $key, string $ip, array $data): void
+{
+    $filename = getRateLimitStoragePath() . '/' . md5($key . '_' . $ip) . '.json';
+    @file_put_contents($filename, json_encode($data), LOCK_EX);
+}
+
+/**
+ * Clean up expired rate limit files (call periodically)
+ * 
+ * @param int $maxAge Maximum age in seconds (default: 1 hour)
+ */
+function cleanupRateLimitFiles(int $maxAge = 3600): void
+{
+    $path = getRateLimitStoragePath();
+    if (!is_dir($path)) {
+        return;
+    }
+    
+    $now = time();
+    foreach (glob($path . '/*.json') as $file) {
+        if (($now - filemtime($file)) > $maxAge) {
+            @unlink($file);
+        }
+    }
+}
+
+/**
+ * Generic rate limiting function with IP-based fallback
+ * 
+ * Uses a hybrid approach:
+ * 1. Session-based tracking (primary) - works for logged-in users and those with cookies
+ * 2. IP-based file tracking (fallback) - catches users who bypass sessions
+ * 
+ * A request is rate-limited if EITHER the session OR IP limit is exceeded.
  * 
  * @param string $key Unique identifier for the rate limit (e.g., 'oauth_callback', 'api_favorites')
  * @param int $maxAttempts Maximum number of attempts allowed
  * @param int $windowSeconds Time window in seconds
- * @param string|null $identifier Optional identifier (e.g., user ID, IP) for per-user/IP rate limiting
+ * @param string|null $identifier Optional identifier (e.g., user ID) for per-user rate limiting
  * @return bool True if rate limited, false if allowed
  */
 function isRateLimited(string $key, int $maxAttempts, int $windowSeconds, ?string $identifier = null): bool
 {
-    // Use identifier if provided, otherwise use session-based (for anonymous users)
-    $rateLimitKey = $identifier ? "rate_limit_{$key}_{$identifier}" : "rate_limit_{$key}";
-    
     $now = time();
-    $attempts = $_SESSION[$rateLimitKey] ?? ['count' => 0, 'first_attempt' => $now];
     
-    // Reset if window has passed
-    if (($now - $attempts['first_attempt']) >= $windowSeconds) {
-        $_SESSION[$rateLimitKey] = ['count' => 0, 'first_attempt' => $now];
-        return false;
+    // === Session-based rate limiting (primary) ===
+    $sessionKey = $identifier ? "rate_limit_{$key}_{$identifier}" : "rate_limit_{$key}";
+    $sessionAttempts = $_SESSION[$sessionKey] ?? ['count' => 0, 'first_attempt' => $now];
+    
+    // Reset session tracking if window has passed
+    if (($now - $sessionAttempts['first_attempt']) >= $windowSeconds) {
+        $_SESSION[$sessionKey] = ['count' => 0, 'first_attempt' => $now];
+        $sessionAttempts = ['count' => 0, 'first_attempt' => $now];
     }
     
-    return $attempts['count'] >= $maxAttempts;
+    // Check session limit
+    if ($sessionAttempts['count'] >= $maxAttempts) {
+        return true;
+    }
+    
+    // === IP-based rate limiting (fallback) ===
+    // Only apply IP-based limiting for anonymous requests (no identifier)
+    // For logged-in users, the session/user ID tracking is sufficient
+    if ($identifier === null) {
+        $clientIp = getClientIp();
+        $ipAttempts = getIpRateLimitData($key, $clientIp);
+        
+        // Reset IP tracking if window has passed
+        if (($now - $ipAttempts['first_attempt']) >= $windowSeconds) {
+            $ipAttempts = ['count' => 0, 'first_attempt' => $now];
+            saveIpRateLimitData($key, $clientIp, $ipAttempts);
+        }
+        
+        // Check IP limit
+        if ($ipAttempts['count'] >= $maxAttempts) {
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 /**
  * Record an attempt for rate limiting
  * 
+ * Records the attempt in both session and IP-based storage.
+ * 
  * @param string $key Unique identifier for the rate limit
- * @param string|null $identifier Optional identifier (e.g., user ID, IP)
+ * @param string|null $identifier Optional identifier (e.g., user ID)
  */
 function recordRateLimitAttempt(string $key, ?string $identifier = null): void
 {
-    $rateLimitKey = $identifier ? "rate_limit_{$key}_{$identifier}" : "rate_limit_{$key}";
     $now = time();
     
-    if (!isset($_SESSION[$rateLimitKey])) {
-        $_SESSION[$rateLimitKey] = ['count' => 1, 'first_attempt' => $now];
+    // === Record in session ===
+    $sessionKey = $identifier ? "rate_limit_{$key}_{$identifier}" : "rate_limit_{$key}";
+    
+    if (!isset($_SESSION[$sessionKey])) {
+        $_SESSION[$sessionKey] = ['count' => 1, 'first_attempt' => $now];
     } else {
-        $_SESSION[$rateLimitKey]['count']++;
+        $_SESSION[$sessionKey]['count']++;
+    }
+    
+    // === Record by IP (for anonymous requests) ===
+    if ($identifier === null) {
+        $clientIp = getClientIp();
+        $ipAttempts = getIpRateLimitData($key, $clientIp);
+        
+        // Reset if window has passed
+        if (($now - $ipAttempts['first_attempt']) >= 3600) { // Use 1 hour max window for IP tracking
+            $ipAttempts = ['count' => 1, 'first_attempt' => $now];
+        } else {
+            $ipAttempts['count']++;
+        }
+        
+        saveIpRateLimitData($key, $clientIp, $ipAttempts);
+    }
+    
+    // Periodically clean up old rate limit files (1% chance per request)
+    if (mt_rand(1, 100) === 1) {
+        cleanupRateLimitFiles();
     }
 }
 
@@ -444,12 +600,24 @@ function withRateLimit(
 /**
  * Clear rate limit for a specific key
  * 
+ * Clears both session-based and IP-based rate limit data.
+ * 
  * @param string $key Unique identifier for the rate limit
- * @param string|null $identifier Optional identifier (e.g., user ID, IP)
+ * @param string|null $identifier Optional identifier (e.g., user ID)
  */
 function clearRateLimit(string $key, ?string $identifier = null): void
 {
-    $rateLimitKey = $identifier ? "rate_limit_{$key}_{$identifier}" : "rate_limit_{$key}";
-    unset($_SESSION[$rateLimitKey]);
+    // Clear session-based rate limit
+    $sessionKey = $identifier ? "rate_limit_{$key}_{$identifier}" : "rate_limit_{$key}";
+    unset($_SESSION[$sessionKey]);
+    
+    // Clear IP-based rate limit (for anonymous requests)
+    if ($identifier === null) {
+        $clientIp = getClientIp();
+        $filename = getRateLimitStoragePath() . '/' . md5($key . '_' . $clientIp) . '.json';
+        if (file_exists($filename)) {
+            @unlink($filename);
+        }
+    }
 }
 
