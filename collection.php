@@ -35,7 +35,6 @@ function renderCollectionNotFound(): never
     exit;
 }
 
-// Get collection parameters
 $username = getQuery('user', '');
 $slug = getQuery('slug', '');
 
@@ -43,24 +42,19 @@ if (empty($username) || empty($slug)) {
     renderCollectionNotFound();
 }
 
-// Get database connection
 try {
     $pdo = getDb();
 } catch (RuntimeException $e) {
-    throw new RuntimeException('Database connection not available');
+    throw new RuntimeException('Database connection not available', 0, $e);
 }
 
-// Get the collection
 $collection = getPublicCollection($pdo, $username, $slug);
 
 if (!$collection) {
     renderCollectionNotFound();
 }
 
-// Get collection items with full data for lightbox
 $items = getCollectionItems($pdo, $collection['id']);
-
-// Get current user for favorite functionality
 $currentUser = getCurrentUser();
 $userFavoriteIds = $currentUser ? getUserFavoriteIds($pdo, $currentUser['id']) : [];
 
@@ -116,66 +110,8 @@ require_once __DIR__ . '/templates/header.php';
         <div class="furniture-grid" id="collection-grid">
             <?php foreach ($items as $item): 
                 $isFavorited = in_array($item['id'], $userFavoriteIds);
-                $tags = $item['tags'] ?? [];
-                $maxVisibleTags = 3;
-                $visibleTags = array_slice($tags, 0, $maxVisibleTags);
-                $extraCount = count($tags) - $maxVisibleTags;
-            ?>
-            <article class="furniture-card" 
-                     data-id="<?= $item['id'] ?>"
-                     data-name="<?= e($item['name']) ?>"
-                     data-category="<?= e($item['category_name']) ?>"
-                     data-price="<?= $item['price'] ?>"
-                     data-image="<?= e($item['image_url'] ?? '/images/placeholder.svg') ?>"
-                     tabindex="0">
-                <div class="card-image" data-action="lightbox">
-                    <img 
-                        src="<?= e($item['image_url'] ?? '/images/placeholder.svg') ?>" 
-                        alt="<?= e($item['name']) ?>"
-                        loading="lazy"
-                        onerror="this.src='/images/placeholder.svg'"
-                    >
-                </div>
-                <div class="card-body">
-                    <h3 title="<?= e($item['name']) ?>"><?= e($item['name']) ?></h3>
-                    <p class="meta">
-                        <span class="category"><?= e($item['category_name']) ?></span>
-                        <span class="separator">•</span>
-                        <span class="price">$<?= number_format($item['price']) ?></span>
-                    </p>
-                    <div class="tags">
-                        <?php foreach ($visibleTags as $tag): ?>
-                            <span class="tag" style="--tag-color: <?= e($tag['color'] ?? '#6b7280') ?>">
-                                <?= e($tag['name']) ?>
-                            </span>
-                        <?php endforeach; ?>
-                        <?php if ($extraCount > 0): ?>
-                            <span class="tag-more">+<?= $extraCount ?></span>
-                        <?php endif; ?>
-                    </div>
-                    <div class="actions">
-                        <button 
-                            class="btn-copy" 
-                            data-name="<?= e($item['name']) ?>"
-                            title="Copy /sf command"
-                        >
-                            <span class="btn-icon">📋</span>
-                            <span class="btn-text">Copy</span>
-                        </button>
-                        <?php if ($currentUser): ?>
-                        <button 
-                            class="btn-favorite <?= $isFavorited ? 'active' : '' ?>" 
-                            data-id="<?= $item['id'] ?>"
-                            title="<?= $isFavorited ? 'Remove from favorites' : 'Add to favorites' ?>"
-                            aria-label="<?= $isFavorited ? 'Remove from favorites' : 'Add to favorites' ?>"
-                        >
-                            <?= $isFavorited ? '❤️' : '🤍' ?>
-                        </button>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </article>
-            <?php endforeach; ?>
+                echo renderFurnitureCard($item, $isFavorited, (bool) $currentUser);
+            endforeach; ?>
         </div>
         <?php endif; ?>
     </div>
@@ -307,6 +243,7 @@ require_once __DIR__ . '/templates/header.php';
         flex: 1;
     }
 }
+
 </style>
 
 <script>
@@ -316,7 +253,8 @@ const CollectionPage = {
         return [
             'id' => $item['id'],
             'name' => $item['name'],
-            'category_name' => $item['category_name'],
+            'categories' => $item['categories'] ?? [],
+            'category_name' => $item['category_name'] ?? ($item['categories'][0]['name'] ?? ''),
             'price' => $item['price'],
             'image_url' => $item['image_url'] ?? '/images/placeholder.svg',
         ];
@@ -332,8 +270,8 @@ const CollectionPage = {
     lightboxTitle: null,
     lightboxMeta: null,
     
+    
     init() {
-        // Set up the furniture data for App (so lightbox favorites work)
         if (typeof App !== 'undefined') {
             App.state.furniture = this.items;
         }
@@ -533,10 +471,13 @@ const CollectionPage = {
             this.lightboxTitle.textContent = item.name;
         }
         if (this.lightboxMeta) {
-            this.lightboxMeta.textContent = `${item.category_name} • $${item.price.toLocaleString()}`;
+            // Show all categories
+            const categoryText = item.categories?.length > 0 
+                ? item.categories.map(c => c.name).join(', ')
+                : item.category_name || '';
+            this.lightboxMeta.textContent = `${categoryText} • $${item.price.toLocaleString()}`;
         }
         
-        // Update lightbox favorite button if exists
         const favBtn = document.getElementById('lightbox-favorite');
         if (favBtn && typeof App !== 'undefined') {
             const isFav = App.state.favorites?.has(item.id);
@@ -545,7 +486,6 @@ const CollectionPage = {
             favBtn.dataset.id = item.id;
         }
         
-        // Update nav buttons visibility
         const prevBtn = document.querySelector('.lightbox-nav.prev');
         const nextBtn = document.querySelector('.lightbox-nav.next');
         if (prevBtn) prevBtn.style.display = this.items.length > 1 ? '' : 'none';
@@ -553,7 +493,6 @@ const CollectionPage = {
     },
     
     async toggleFavorite(id, btn) {
-        // Prevent multiple simultaneous toggles
         if (btn?.disabled) return;
         if (btn) btn.disabled = true;
         
@@ -565,13 +504,11 @@ const CollectionPage = {
         
         const isFavorite = btn?.classList.contains('active');
         
-        // Optimistic update
         if (btn) {
             btn.classList.toggle('active');
             btn.innerHTML = isFavorite ? '🤍' : '❤️';
         }
         
-        // Update card button too (if this was called from lightbox, find the card button)
         const card = btn?.closest('.furniture-card');
         if (card) {
             const cardBtn = card.querySelector('.actions .btn-favorite');
@@ -580,7 +517,6 @@ const CollectionPage = {
                 cardBtn.innerHTML = isFavorite ? '🤍' : '❤️';
             }
         } else {
-            // Fallback: if not found in card, search by ID
             const cardBtn = document.querySelector(`#collection-grid .btn-favorite[data-id="${id}"]`);
             if (cardBtn && cardBtn !== btn) {
                 cardBtn.classList.toggle('active');
@@ -588,7 +524,6 @@ const CollectionPage = {
             }
         }
         
-        // Sync with App state
         if (typeof App !== 'undefined' && App.state.favorites) {
             if (isFavorite) {
                 App.state.favorites.delete(id);
@@ -597,8 +532,7 @@ const CollectionPage = {
             }
         }
         
-        // Get CSRF token from meta tag
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+        const csrfToken = window.GTAW ? window.GTAW.getCsrfToken() : '';
         
         try {
             await fetch('/api.php?action=favorites', {
@@ -614,7 +548,6 @@ const CollectionPage = {
             });
             this.toast(isFavorite ? 'Removed from favorites' : 'Added to favorites', 'success');
         } catch (error) {
-            // Revert on error
             if (btn) {
                 btn.classList.toggle('active');
                 btn.innerHTML = isFavorite ? '❤️' : '🤍';
@@ -633,20 +566,12 @@ const CollectionPage = {
         }
     },
     
+    /**
+     * Copy /sf command to clipboard
+     * Delegates to shared GTAW.copyCommand() for consistent behavior
+     */
     copyCommand(name) {
-        const command = '/sf ' + name;
-        navigator.clipboard.writeText(command).then(() => {
-            this.toast('Copied: ' + command, 'success');
-        }).catch(() => {
-            // Fallback
-            const input = document.createElement('input');
-            input.value = command;
-            document.body.appendChild(input);
-            input.select();
-            document.execCommand('copy');
-            document.body.removeChild(input);
-            this.toast('Copied: ' + command, 'success');
-        });
+        window.GTAW.copyCommand(name);
     },
     
     exportCommands() {
@@ -661,43 +586,30 @@ const CollectionPage = {
         this.toast('Exported ' + this.items.length + ' commands', 'success');
     },
     
+    /**
+     * Share collection by copying URL to clipboard
+     * Uses shared GTAW.copyToClipboard() for consistent behavior
+     */
     shareCollection() {
         const url = window.location.href;
-        navigator.clipboard.writeText(url).then(() => {
-            this.toast('Collection link copied!', 'success');
-        }).catch(() => {
-            prompt('Share this link:', url);
+        window.GTAW.copyToClipboard(url).then((success) => {
+            if (success) {
+                this.toast('Collection link copied!', 'success');
+            } else {
+                prompt('Share this link:', url);
+            }
         });
     },
     
+    /**
+     * Show toast notification
+     * Delegates to shared GTAW.toast() for consistent behavior
+     */
     toast(message, type = 'info') {
-        // Use App's toast if available
-        if (typeof App !== 'undefined' && App.toast) {
-            App.toast(message, type);
-            return;
-        }
-        
-        // Fallback toast
-        const container = document.getElementById('toast-container');
-        if (!container) {
-            console.log(message);
-            return;
-        }
-        
-        const icons = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-message">${message}</span>`;
-        container.appendChild(toast);
-        
-        setTimeout(() => {
-            toast.classList.add('hiding');
-            setTimeout(() => toast.remove(), 300);
-        }, 3000);
+        window.GTAW.toast(message, type);
     }
 };
 
-// Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => CollectionPage.init());
 </script>
 
