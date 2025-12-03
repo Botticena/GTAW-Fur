@@ -15,14 +15,11 @@ require_once __DIR__ . '/../includes/submissions.php';
 // Require admin authentication
 requireAdmin();
 
-// Get database connection
 try {
     $pdo = getDb();
 } catch (RuntimeException $e) {
     throw new RuntimeException('Database connection not available');
 }
-
-// Get current page
 $page = getQuery('page', 'dashboard');
 $action = getQuery('action', 'list');
 $id = getQueryInt('id', 0);
@@ -206,6 +203,60 @@ function renderDashboard(PDO $pdo): void
     </p>
     <?php endif; ?>
     
+    <!-- Analytics Section -->
+    <div class="dashboard-analytics-grid">
+        <!-- Popular Items -->
+        <?php 
+        $popularItems = getPopularFurniture($pdo, 8);
+        if (!empty($popularItems)): 
+        ?>
+        <div class="analytics-card">
+            <h3>🔥 Most Popular Items</h3>
+            <div class="popular-items-list">
+                <?php foreach ($popularItems as $item): ?>
+                <?php 
+                $cats = $item['categories'] ?? [];
+                $catDisplay = !empty($cats) ? $cats[0]['name'] : ($item['category_name'] ?? '');
+                if (count($cats) > 1) $catDisplay .= ' +' . (count($cats) - 1);
+                ?>
+                <a href="/?furniture=<?= $item['id'] ?>" class="popular-item" target="_blank">
+                    <img src="<?= e($item['image_url'] ?? '/images/placeholder.svg') ?>" 
+                         alt="" onerror="this.src='/images/placeholder.svg'">
+                    <div class="popular-item-info">
+                        <span class="popular-item-name"><?= e($item['name']) ?></span>
+                        <span class="popular-item-meta"><?= e($catDisplay) ?></span>
+                    </div>
+                    <span class="popular-item-count">❤️ <?= number_format($item['favorite_count']) ?></span>
+                </a>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+        
+        <!-- Category Stats -->
+        <?php 
+        $categoryStats = getCategoryStats($pdo);
+        if (!empty($categoryStats)): 
+        ?>
+        <div class="analytics-card">
+            <h3>📊 Category Performance</h3>
+            <div class="category-stats-list">
+                <?php foreach (array_slice($categoryStats, 0, 8) as $cat): ?>
+                <div class="category-stat">
+                    <span class="category-stat-name">
+                        <?= e($cat['icon']) ?> <?= e($cat['name']) ?>
+                    </span>
+                    <span class="category-stat-counts">
+                        <span title="Items"><?= number_format($cat['item_count']) ?> items</span>
+                        <span title="Favorites" class="category-stat-favorites">❤️ <?= number_format($cat['favorite_count']) ?></span>
+                    </span>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+    </div>
+    
     <?php if (!empty($stats['recent_users'])): ?>
     <h2>Recent Users</h2>
     <div class="data-table-container">
@@ -235,7 +286,10 @@ function renderDashboard(PDO $pdo): void
 function renderFurnitureList(PDO $pdo): void
 {
     $currentPage = max(1, getQueryInt('p', 1));
-    $result = getFurnitureList($pdo, $currentPage, 50);
+    $categoryFilter = getQuery('category', null);
+    $categories = getCategories($pdo);
+    
+    $result = getFurnitureList($pdo, $currentPage, 50, $categoryFilter);
     $items = $result['items'];
     $pagination = $result['pagination'];
     $csrfToken = generateCsrfToken();
@@ -247,8 +301,41 @@ function renderFurnitureList(PDO $pdo): void
         </div>
     </div>
     
+    <!-- Filter Bar: Search + Category -->
+    <div class="table-filter-bar">
+        <input type="search" 
+               class="table-search-input" 
+               data-table="furniture-table"
+               placeholder="🔍 Search furniture..."
+               aria-label="Search furniture">
+        <div class="filter-buttons">
+            <select onchange="window.location.href='/admin/?page=furniture' + (this.value ? '&category=' + this.value : '')">
+                <option value="">All Categories</option>
+                <?php foreach ($categories as $cat): ?>
+                <option value="<?= e($cat['slug']) ?>" <?= $categoryFilter === $cat['slug'] ? 'selected' : '' ?>>
+                    <?= e($cat['icon']) ?> <?= e($cat['name']) ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
+            <?php if ($categoryFilter): ?>
+            <a href="/admin/?page=furniture" class="btn btn-sm">✕ Clear</a>
+            <?php endif; ?>
+        </div>
+    </div>
+    
+    <?php if (empty($items)): ?>
     <div class="data-table-container">
-        <table class="data-table">
+        <?= renderEmptyState(
+            '🪑',
+            'No furniture items',
+            'Add furniture items to the catalog.',
+            '/admin/?page=furniture&action=add',
+            'Add First Furniture'
+        ) ?>
+    </div>
+    <?php else: ?>
+    <div class="data-table-container">
+        <table id="furniture-table" class="data-table">
             <thead>
                 <tr>
                     <th style="width: 60px">ID</th>
@@ -260,16 +347,24 @@ function renderFurnitureList(PDO $pdo): void
                 </tr>
             </thead>
             <tbody>
-                <?php if (empty($items)): ?>
-                <tr>
-                    <td colspan="6" class="empty">No furniture items found</td>
-                </tr>
-                <?php else: ?>
                 <?php foreach ($items as $item): ?>
+                <?php 
+                $categories = $item['categories'] ?? [];
+                $categoryCount = count($categories);
+                ?>
                 <tr data-id="<?= $item['id'] ?>">
                     <td><?= $item['id'] ?></td>
                     <td><strong><?= e($item['name']) ?></strong></td>
-                    <td><?= e($item['category_name']) ?></td>
+                    <td>
+                        <?php if ($categoryCount > 0): ?>
+                            <?= e($categories[0]['name']) ?>
+                            <?php if ($categoryCount > 1): ?>
+                                <span class="category-overflow" title="<?= e(implode(', ', array_column($categories, 'name'))) ?>">+<?= $categoryCount - 1 ?></span>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <?= e($item['category_name'] ?? '-') ?>
+                        <?php endif; ?>
+                    </td>
                     <td>$<?= number_format($item['price']) ?></td>
                     <td>
                         <?php foreach (($item['tags'] ?? []) as $tag): ?>
@@ -290,12 +385,15 @@ function renderFurnitureList(PDO $pdo): void
                     </td>
                 </tr>
                 <?php endforeach; ?>
-                <?php endif; ?>
             </tbody>
         </table>
     </div>
     
-    <?php renderPagination($pagination, '/admin/?page=furniture'); ?>
+    <?php 
+    $paginationUrl = '/admin/?page=furniture' . ($categoryFilter ? '&category=' . urlencode($categoryFilter) : '');
+    echo renderPaginationHtml($pagination, $paginationUrl, 'p'); 
+    ?>
+    <?php endif; ?>
     <?php
 }
 
@@ -312,87 +410,102 @@ function renderFurnitureAdd(PDO $pdo): void
         </div>
     </div>
     
-    <form class="admin-form two-column" method="POST" data-ajax data-action="/admin/api.php?action=furniture/create" data-redirect="/admin/?page=furniture">
+    <form class="admin-form form-split" method="POST" data-ajax data-action="/admin/api.php?action=furniture/create" data-redirect="/admin/?page=furniture">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
         
-        <!-- Left Column: Main Fields -->
-        <div class="form-column-left">
-            <div class="form-group">
-                <label for="name">Name *</label>
-                <input type="text" id="name" name="name" required maxlength="255" placeholder="e.g., prop_sofa_01">
-                <p class="form-help">The exact prop name used in-game</p>
-            </div>
-            
-            <div class="form-group">
-                <label for="category_id">Category *</label>
-                <select id="category_id" name="category_id" required>
-                    <option value="">Select a category</option>
-                    <?php foreach ($categories as $cat): ?>
-                    <option value="<?= $cat['id'] ?>"><?= e($cat['icon']) ?> <?= e($cat['name']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label for="price">Price</label>
-                <input type="number" id="price" name="price" min="0" value="250">
-                <p class="form-help">Default is $250 (most common price in-game)</p>
-            </div>
-            
-            <div class="form-group">
-                <label for="image_url">Image URL</label>
-                <input type="text" id="image_url" name="image_url" placeholder="/images/furniture/... or https://...">
-                <p class="form-help">Relative path (starting with /) or full URL</p>
-                <div class="image-preview" id="image-preview">
-                    <img src="/images/placeholder.svg" alt="Preview" id="preview-img">
+        <div class="form-layout">
+            <!-- Left Column: Form Container -->
+            <div class="form-layout-main">
+                <div class="form-group">
+                    <label for="name">Name *</label>
+                    <input type="text" id="name" name="name" required maxlength="255" placeholder="e.g., Black Double Bed">
+                    <p class="form-help">The exact prop name used in-game</p>
                 </div>
-            </div>
-            
-            <div class="form-actions">
-                <button type="submit" class="btn btn-primary">Create Furniture</button>
-                <a href="/admin/?page=furniture" class="btn">Cancel</a>
-            </div>
-        </div>
-        
-        <!-- Right Column: Tags by Group -->
-        <div class="form-column-right">
-            <label class="tags-column-label">Tags</label>
-            
-            <?php foreach ($tagsGrouped['groups'] as $group): ?>
-            <?php if (!empty($group['tags'])): ?>
-            <div class="tag-group-section">
-                <h4>
-                    <span class="group-color-dot" style="background: <?= e($group['color']) ?>"></span>
-                    <?= e($group['name']) ?>
-                </h4>
-                <div class="checkbox-group">
-                    <?php foreach ($group['tags'] as $tag): ?>
-                    <label class="checkbox-item">
-                        <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>">
-                        <span><?= e($tag['name']) ?></span>
-                    </label>
-                    <?php endforeach; ?>
+                
+                <div class="form-group">
+                    <label for="price">Price</label>
+                    <input type="number" id="price" name="price" min="0" value="250">
+                    <p class="form-help">Default is $250 (most common price in-game)</p>
                 </div>
-            </div>
-            <?php endif; ?>
-            <?php endforeach; ?>
-            
-            <?php if (!empty($tagsGrouped['ungrouped'])): ?>
-            <div class="tag-group-section">
-                <h4>
-                    <span class="group-color-dot" style="background: #6b7280"></span>
-                    Uncategorized
-                </h4>
-                <div class="checkbox-group">
-                    <?php foreach ($tagsGrouped['ungrouped'] as $tag): ?>
-                    <label class="checkbox-item">
-                        <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>">
-                        <span><?= e($tag['name']) ?></span>
-                    </label>
-                    <?php endforeach; ?>
+                
+                <div class="form-group">
+                    <label for="image_url">Image URL</label>
+                    <input type="text" id="image_url" name="image_url" placeholder="/images/furniture/... or https://...">
+                    <p class="form-help">Relative path (starting with /) or full URL</p>
+                    <div class="image-preview" id="image-preview">
+                        <img src="/images/placeholder.svg" alt="Preview" id="preview-img">
+                    </div>
                 </div>
+                
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Create Furniture</button>
+                    <a href="/admin/?page=furniture" class="btn">Cancel</a>
+                </div>
+                
+                <!-- Duplicate Detection Panel (in left column, below form) -->
+                <aside id="duplicate-panel" class="duplicate-panel hidden">
+                    <!-- Populated by JavaScript -->
+                </aside>
             </div>
-            <?php endif; ?>
+            
+            <!-- Right Column: Sidebar with separate panels -->
+            <div class="form-layout-sidebar">
+                <!-- Categories Panel (styled like tags) -->
+                <section class="tags-panel categories-panel">
+                    <h3 class="tags-panel-header">Categories * <small style="font-weight: normal; opacity: 0.7;">(first selected = primary)</small></h3>
+                    <div class="tag-group-section">
+                        <div class="checkbox-group">
+                            <?php foreach ($categories as $cat): ?>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="category_ids[]" value="<?= $cat['id'] ?>">
+                                <span><?= e($cat['icon']) ?> <?= e($cat['name']) ?></span>
+                            </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- Tags Panel -->
+                <section class="tags-panel">
+                    <h3 class="tags-panel-header">Tags</h3>
+                    
+                    <?php foreach ($tagsGrouped['groups'] as $group): ?>
+                    <?php if (!empty($group['tags'])): ?>
+                    <div class="tag-group-section">
+                        <h4>
+                            <span class="group-color-dot" style="background: <?= e($group['color']) ?>"></span>
+                            <?= e($group['name']) ?>
+                        </h4>
+                        <div class="checkbox-group">
+                            <?php foreach ($group['tags'] as $tag): ?>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>">
+                                <span><?= e($tag['name']) ?></span>
+                            </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                    <?php endforeach; ?>
+                    
+                    <?php if (!empty($tagsGrouped['ungrouped'])): ?>
+                    <div class="tag-group-section">
+                        <h4>
+                            <span class="group-color-dot" style="background: #6b7280"></span>
+                            Uncategorized
+                        </h4>
+                        <div class="checkbox-group">
+                            <?php foreach ($tagsGrouped['ungrouped'] as $tag): ?>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>">
+                                <span><?= e($tag['name']) ?></span>
+                            </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                </section>
+            </div>
         </div>
     </form>
     <?php
@@ -409,6 +522,7 @@ function renderFurnitureEdit(PDO $pdo, int $id): void
     $categories = getCategories($pdo);
     $tagsGrouped = getTagsGrouped($pdo);
     $itemTagIds = array_column($item['tags'] ?? [], 'id');
+    $itemCategoryIds = array_column($item['categories'] ?? [], 'id');
     $csrfToken = generateCsrfToken();
     
     // Determine current image URL for preview
@@ -421,87 +535,103 @@ function renderFurnitureEdit(PDO $pdo, int $id): void
         </div>
     </div>
     
-    <form class="admin-form two-column" method="POST" data-ajax data-action="/admin/api.php?action=furniture/update&id=<?= $id ?>" data-redirect="/admin/?page=furniture">
+    <form class="admin-form form-split" method="POST" data-ajax data-action="/admin/api.php?action=furniture/update&id=<?= $id ?>" data-redirect="/admin/?page=furniture">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
         
-        <!-- Left Column: Main Fields -->
-        <div class="form-column-left">
-            <div class="form-group">
-                <label for="name">Name *</label>
-                <input type="text" id="name" name="name" required maxlength="255" value="<?= e($item['name']) ?>">
-            </div>
-            
-            <div class="form-group">
-                <label for="category_id">Category *</label>
-                <select id="category_id" name="category_id" required>
-                    <option value="">Select a category</option>
-                    <?php foreach ($categories as $cat): ?>
-                    <option value="<?= $cat['id'] ?>" <?= $cat['id'] == $item['category_id'] ? 'selected' : '' ?>>
-                        <?= e($cat['icon']) ?> <?= e($cat['name']) ?>
-                    </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label for="price">Price</label>
-                <input type="number" id="price" name="price" min="0" value="<?= $item['price'] ?>">
-            </div>
-            
-            <div class="form-group">
-                <label for="image_url">Image URL</label>
-                <input type="text" id="image_url" name="image_url" value="<?= e($item['image_url'] ?? '') ?>" placeholder="/images/furniture/... or https://...">
-                <p class="form-help">Relative path (starting with /) or full URL</p>
-                <div class="image-preview" id="image-preview">
-                    <img src="<?= e($currentImageUrl ?: '/images/placeholder.svg') ?>" alt="Preview" id="preview-img" onerror="this.src='/images/placeholder.svg'">
+        <div class="form-layout">
+            <!-- Left Column: Form Container -->
+            <div class="form-layout-main">
+                <div class="form-group">
+                    <label for="name">Name *</label>
+                    <input type="text" id="name" name="name" required maxlength="255" value="<?= e($item['name']) ?>">
                 </div>
-            </div>
-            
-            <div class="form-actions">
-                <button type="submit" class="btn btn-primary">Update Furniture</button>
-                <a href="/admin/?page=furniture" class="btn">Cancel</a>
-            </div>
-        </div>
-        
-        <!-- Right Column: Tags by Group -->
-        <div class="form-column-right">
-            <label class="tags-column-label">Tags</label>
-            
-            <?php foreach ($tagsGrouped['groups'] as $group): ?>
-            <?php if (!empty($group['tags'])): ?>
-            <div class="tag-group-section">
-                <h4>
-                    <span class="group-color-dot" style="background: <?= e($group['color']) ?>"></span>
-                    <?= e($group['name']) ?>
-                </h4>
-                <div class="checkbox-group">
-                    <?php foreach ($group['tags'] as $tag): ?>
-                    <label class="checkbox-item <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>">
-                        <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>" <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>>
-                        <span><?= e($tag['name']) ?></span>
-                    </label>
-                    <?php endforeach; ?>
+                
+                <div class="form-group">
+                    <label for="price">Price</label>
+                    <input type="number" id="price" name="price" min="0" value="<?= $item['price'] ?>">
                 </div>
-            </div>
-            <?php endif; ?>
-            <?php endforeach; ?>
-            
-            <?php if (!empty($tagsGrouped['ungrouped'])): ?>
-            <div class="tag-group-section">
-                <h4>
-                    <span class="group-color-dot" style="background: #6b7280"></span>
-                    Uncategorized
-                </h4>
-                <div class="checkbox-group">
-                    <?php foreach ($tagsGrouped['ungrouped'] as $tag): ?>
-                    <label class="checkbox-item <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>">
-                        <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>" <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>>
-                        <span><?= e($tag['name']) ?></span>
-                    </label>
-                    <?php endforeach; ?>
+                
+                <div class="form-group">
+                    <label for="image_url">Image URL</label>
+                    <input type="text" id="image_url" name="image_url" value="<?= e($item['image_url'] ?? '') ?>" placeholder="/images/furniture/... or https://...">
+                    <p class="form-help">Relative path (starting with /) or full URL</p>
+                    <div class="image-preview" id="image-preview">
+                        <img src="<?= e($currentImageUrl ?: '/images/placeholder.svg') ?>" alt="Preview" id="preview-img" onerror="this.src='/images/placeholder.svg'">
+                    </div>
                 </div>
+                
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Update Furniture</button>
+                    <a href="/admin/?page=furniture" class="btn">Cancel</a>
+                </div>
+                
+                <!-- Duplicate Detection Panel (in left column, below form) -->
+                <aside id="duplicate-panel" 
+                       class="duplicate-panel hidden"
+                       data-exclude-id="<?= $id ?>">
+                    <!-- Populated by JavaScript -->
+                </aside>
             </div>
-            <?php endif; ?>
+            
+            <!-- Right Column: Sidebar with separate panels -->
+            <div class="form-layout-sidebar">
+                <!-- Categories Panel (styled like tags) -->
+                <section class="tags-panel categories-panel">
+                    <h3 class="tags-panel-header">Categories * <small style="font-weight: normal; opacity: 0.7;">(first selected = primary)</small></h3>
+                    <div class="tag-group-section">
+                        <div class="checkbox-group">
+                            <?php foreach ($categories as $cat): ?>
+                            <?php $isChecked = in_array($cat['id'], $itemCategoryIds); ?>
+                            <label class="checkbox-item <?= $isChecked ? 'checked' : '' ?>">
+                                <input type="checkbox" name="category_ids[]" value="<?= $cat['id'] ?>" <?= $isChecked ? 'checked' : '' ?>>
+                                <span><?= e($cat['icon']) ?> <?= e($cat['name']) ?></span>
+                            </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- Tags Panel -->
+                <section class="tags-panel">
+                    <h3 class="tags-panel-header">Tags</h3>
+                    
+                    <?php foreach ($tagsGrouped['groups'] as $group): ?>
+                    <?php if (!empty($group['tags'])): ?>
+                    <div class="tag-group-section">
+                        <h4>
+                            <span class="group-color-dot" style="background: <?= e($group['color']) ?>"></span>
+                            <?= e($group['name']) ?>
+                        </h4>
+                        <div class="checkbox-group">
+                            <?php foreach ($group['tags'] as $tag): ?>
+                            <label class="checkbox-item <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>">
+                                <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>" <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>>
+                                <span><?= e($tag['name']) ?></span>
+                            </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                    <?php endforeach; ?>
+                    
+                    <?php if (!empty($tagsGrouped['ungrouped'])): ?>
+                    <div class="tag-group-section">
+                        <h4>
+                            <span class="group-color-dot" style="background: #6b7280"></span>
+                            Uncategorized
+                        </h4>
+                        <div class="checkbox-group">
+                            <?php foreach ($tagsGrouped['ungrouped'] as $tag): ?>
+                            <label class="checkbox-item <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>">
+                                <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>" <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>>
+                                <span><?= e($tag['name']) ?></span>
+                            </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                </section>
+            </div>
         </div>
     </form>
     <?php
@@ -519,6 +649,17 @@ function renderCategoryList(PDO $pdo): void
         </div>
     </div>
     
+    <?php if (empty($categories)): ?>
+    <div class="data-table-container">
+        <?= renderEmptyState(
+            '📁',
+            'No categories yet',
+            'Create categories to organize furniture items.',
+            '/admin/?page=categories&action=add',
+            'Add First Category'
+        ) ?>
+    </div>
+    <?php else: ?>
     <div class="data-table-container">
         <table class="data-table" data-sortable data-reorder-url="/admin/api.php?action=categories/reorder">
             <thead>
@@ -558,6 +699,7 @@ function renderCategoryList(PDO $pdo): void
             </tbody>
         </table>
     </div>
+    <?php endif; ?>
     <?php
 }
 
@@ -659,6 +801,17 @@ function renderTagGroupList(PDO $pdo): void
         </div>
     </div>
     
+    <?php if (empty($groups)): ?>
+    <div class="data-table-container">
+        <?= renderEmptyState(
+            '📁',
+            'No tag groups yet',
+            'Create groups to organize your tags by category (Style, Size, Material, etc.).',
+            '/admin/?page=tag-groups&action=add',
+            'Add First Group'
+        ) ?>
+    </div>
+    <?php else: ?>
     <div class="data-table-container">
         <table class="data-table" data-sortable data-reorder-url="/admin/api.php?action=tag-groups/reorder">
             <thead>
@@ -705,12 +858,10 @@ function renderTagGroupList(PDO $pdo): void
                     </td>
                 </tr>
                 <?php endforeach; ?>
-                <?php if (empty($groups)): ?>
-                <tr><td colspan="6" class="empty">No tag groups found</td></tr>
-                <?php endif; ?>
             </tbody>
         </table>
     </div>
+    <?php endif; ?>
     <?php
 }
 
@@ -820,8 +971,31 @@ function renderTagList(PDO $pdo): void
         </div>
     </div>
     
+    <?php if (empty($tags)): ?>
     <div class="data-table-container">
-        <table class="data-table">
+        <?= renderEmptyState(
+            '🏷️',
+            'No tags yet',
+            'Create tags to help categorize and filter furniture items.',
+            '/admin/?page=tags&action=add',
+            'Add First Tag'
+        ) ?>
+    </div>
+    <?php else: ?>
+    
+    <!-- Search Filter -->
+    <?php if (count($tags) > 10): ?>
+    <div class="table-filter-bar">
+        <input type="search" 
+               class="table-search-input" 
+               data-table="tags-table"
+               placeholder="🔍 Search tags..."
+               aria-label="Search tags">
+    </div>
+    <?php endif; ?>
+    
+    <div class="data-table-container">
+        <table id="tags-table" class="data-table">
             <thead>
                 <tr>
                     <th style="width: 50px">ID</th>
@@ -867,6 +1041,7 @@ function renderTagList(PDO $pdo): void
             </tbody>
         </table>
     </div>
+    <?php endif; ?>
     <?php
 }
 
@@ -985,8 +1160,29 @@ function renderUserList(PDO $pdo): void
         <h1>👥 Users</h1>
     </div>
     
+    <?php if (empty($users)): ?>
     <div class="data-table-container">
-        <table class="data-table">
+        <?= renderEmptyState(
+            '👥',
+            'No users yet',
+            'Users will appear here after they log in with GTA World OAuth.',
+            null,
+            null
+        ) ?>
+    </div>
+    <?php else: ?>
+    
+    <!-- Search Filter -->
+    <div class="table-filter-bar">
+        <input type="search" 
+               class="table-search-input" 
+               data-table="users-table"
+               placeholder="🔍 Search users..."
+               aria-label="Search users">
+    </div>
+    
+    <div class="data-table-container">
+        <table id="users-table" class="data-table">
             <thead>
                 <tr>
                     <th>ID</th>
@@ -1001,11 +1197,6 @@ function renderUserList(PDO $pdo): void
                 </tr>
             </thead>
             <tbody>
-                <?php if (empty($users)): ?>
-                <tr>
-                    <td colspan="9" style="text-align: center; padding: 2rem;">No users found</td>
-                </tr>
-                <?php else: ?>
                 <?php foreach ($users as $user): ?>
                 <tr>
                     <td><?= $user['id'] ?></td>
@@ -1031,12 +1222,12 @@ function renderUserList(PDO $pdo): void
                     </td>
                 </tr>
                 <?php endforeach; ?>
-                <?php endif; ?>
             </tbody>
         </table>
     </div>
     
-    <?php renderPagination($pagination, '/admin/?page=users'); ?>
+    <?= renderPaginationHtml($pagination, '/admin/?page=users', 'p') ?>
+    <?php endif; ?>
     <?php
 }
 
@@ -1066,24 +1257,58 @@ function renderSubmissionList(PDO $pdo): void
         </div>
     </div>
     
-    <!-- Status Filter -->
-    <div class="filter-bar" style="margin-bottom: 1rem;">
-        <a href="/admin/?page=submissions" class="btn btn-sm <?= !$status ? 'btn-primary' : '' ?>">All</a>
-        <a href="/admin/?page=submissions&status=<?= SUBMISSION_STATUS_PENDING ?>" class="btn btn-sm <?= $status === SUBMISSION_STATUS_PENDING ? 'btn-primary' : '' ?>">
-            ⏳ Pending
-        </a>
-        <a href="/admin/?page=submissions&status=<?= SUBMISSION_STATUS_APPROVED ?>" class="btn btn-sm <?= $status === SUBMISSION_STATUS_APPROVED ? 'btn-primary' : '' ?>">
-            ✓ Approved
-        </a>
-        <a href="/admin/?page=submissions&status=<?= SUBMISSION_STATUS_REJECTED ?>" class="btn btn-sm <?= $status === SUBMISSION_STATUS_REJECTED ? 'btn-primary' : '' ?>">
-            ✕ Rejected
-        </a>
+    <!-- Filter Bar: Search + Status -->
+    <div class="table-filter-bar">
+        <input type="search" 
+               class="table-search-input" 
+               data-table="submissions-table"
+               placeholder="🔍 Search submissions..."
+               aria-label="Search submissions">
+        <div class="filter-buttons">
+            <a href="/admin/?page=submissions" class="btn btn-sm <?= !$status ? 'btn-primary' : '' ?>">All</a>
+            <a href="/admin/?page=submissions&status=<?= SUBMISSION_STATUS_PENDING ?>" class="btn btn-sm <?= $status === SUBMISSION_STATUS_PENDING ? 'btn-primary' : '' ?>">
+                ⏳ Pending
+            </a>
+            <a href="/admin/?page=submissions&status=<?= SUBMISSION_STATUS_APPROVED ?>" class="btn btn-sm <?= $status === SUBMISSION_STATUS_APPROVED ? 'btn-primary' : '' ?>">
+                ✓ Approved
+            </a>
+            <a href="/admin/?page=submissions&status=<?= SUBMISSION_STATUS_REJECTED ?>" class="btn btn-sm <?= $status === SUBMISSION_STATUS_REJECTED ? 'btn-primary' : '' ?>">
+                ✕ Rejected
+            </a>
+        </div>
+    </div>
+    
+    <?php if (empty($submissions)): ?>
+    <div class="data-table-container">
+        <?= renderEmptyState(
+            '📝',
+            'No submissions found',
+            $status ? 'No submissions match the selected filter.' : 'User submissions will appear here.',
+            null,
+            null
+        ) ?>
+    </div>
+    <?php else: ?>
+    
+    <!-- Bulk Actions Bar (hidden by default, shown when items selected) -->
+    <div id="bulk-actions-bar" class="bulk-actions-bar" style="display: none;">
+        <span id="bulk-selection-count">0 selected</span>
+        <div class="bulk-actions-buttons">
+            <button class="btn btn-sm btn-success" onclick="Admin.bulkApprove()">✓ Approve Selected</button>
+            <button class="btn btn-sm btn-danger" onclick="Admin.bulkReject()">✕ Reject Selected</button>
+            <button class="btn btn-sm" onclick="Admin.bulkClearSelection()">Clear Selection</button>
+        </div>
     </div>
     
     <div class="data-table-container">
-        <table class="data-table">
+        <table id="submissions-table" class="data-table">
             <thead>
                 <tr>
+                    <th style="width: 40px">
+                        <input type="checkbox" id="bulk-select-all" 
+                               onchange="Admin.bulkToggleAll(this.checked)"
+                               title="Select all pending">
+                    </th>
                     <th style="width: 60px">ID</th>
                     <th style="width: 80px">Type</th>
                     <th>Submitted By</th>
@@ -1094,13 +1319,15 @@ function renderSubmissionList(PDO $pdo): void
                 </tr>
             </thead>
             <tbody>
-                <?php if (empty($submissions)): ?>
-                <tr>
-                    <td colspan="7" class="empty">No submissions found</td>
-                </tr>
-                <?php else: ?>
                 <?php foreach ($submissions as $sub): ?>
                 <tr data-id="<?= $sub['id'] ?>">
+                    <td>
+                        <?php if ($sub['status'] === SUBMISSION_STATUS_PENDING): ?>
+                        <input type="checkbox" class="bulk-select-item" 
+                               value="<?= $sub['id'] ?>"
+                               onchange="Admin.bulkUpdateSelection()">
+                        <?php endif; ?>
+                    </td>
                     <td><?= $sub['id'] ?></td>
                     <td>
                         <span class="badge"><?= $sub['type'] === SUBMISSION_TYPE_NEW ? '✨ New' : '✏️ Edit' ?></span>
@@ -1127,15 +1354,15 @@ function renderSubmissionList(PDO $pdo): void
                     </td>
                 </tr>
                 <?php endforeach; ?>
-                <?php endif; ?>
             </tbody>
         </table>
     </div>
     
     <?php 
     $baseUrl = '/admin/?page=submissions' . ($status ? '&status=' . urlencode($status) : '');
-    renderPagination($pagination, $baseUrl); 
+    echo renderPaginationHtml($pagination, $baseUrl, 'p'); 
     ?>
+    <?php endif; ?>
     <?php
 }
 
@@ -1148,10 +1375,17 @@ function renderSubmissionDetail(PDO $pdo, int $id): void
     }
     
     $data = $submission['data'];
-    $category = getCategoryById($pdo, $data['category_id'] ?? 0);
     $csrfToken = generateCsrfToken();
     
-    // Get original furniture if this is an edit
+    // Handle both old (category_id) and new (category_ids) format
+    $submittedCategoryIds = $data['category_ids'] ?? (isset($data['category_id']) ? [$data['category_id']] : []);
+    $submittedCategories = [];
+    foreach ($submittedCategoryIds as $catId) {
+        $cat = getCategoryById($pdo, (int)$catId);
+        if ($cat) $submittedCategories[] = $cat;
+    }
+    $submittedCategoryNames = array_column($submittedCategories, 'name');
+    
     $originalFurniture = null;
     if ($submission['type'] === SUBMISSION_TYPE_EDIT && $submission['furniture_id']) {
         $originalFurniture = getFurnitureById($pdo, $submission['furniture_id']);
@@ -1230,10 +1464,14 @@ function renderSubmissionDetail(PDO $pdo, int $id): void
                         <td><?= e($originalFurniture['name']) ?></td>
                         <td><?= e($data['name'] ?? '') ?></td>
                     </tr>
-                    <tr class="<?= $originalFurniture['category_id'] !== ($data['category_id'] ?? 0) ? 'changed' : '' ?>">
-                        <td><strong>Category</strong></td>
-                        <td><?= e($originalFurniture['category_name'] ?? '-') ?></td>
-                        <td><?= $category ? e($category['name']) : '-' ?></td>
+                    <?php 
+                    $originalCategoryNames = array_column($originalFurniture['categories'] ?? [], 'name');
+                    $categoriesChanged = $originalCategoryNames !== $submittedCategoryNames;
+                    ?>
+                    <tr class="<?= $categoriesChanged ? 'changed' : '' ?>">
+                        <td><strong>Categories</strong></td>
+                        <td><?= !empty($originalCategoryNames) ? e(implode(', ', $originalCategoryNames)) : '-' ?></td>
+                        <td><?= !empty($submittedCategoryNames) ? e(implode(', ', $submittedCategoryNames)) : '-' ?></td>
                     </tr>
                     <tr class="<?= $originalFurniture['price'] !== ($data['price'] ?? 0) ? 'changed' : '' ?>">
                         <td><strong>Price</strong></td>
@@ -1310,8 +1548,16 @@ function renderSubmissionDetail(PDO $pdo, int $id): void
                     <span class="value"><strong><?= e($data['name'] ?? '-') ?></strong></span>
                 </div>
                 <div class="info-item">
-                    <span class="label">Category:</span>
-                    <span class="value"><?= $category ? e($category['icon'] . ' ' . $category['name']) : '-' ?></span>
+                    <span class="label">Categories:</span>
+                    <span class="value">
+                        <?php if (!empty($submittedCategories)): ?>
+                            <?php foreach ($submittedCategories as $cat): ?>
+                                <?= e($cat['icon'] . ' ' . $cat['name']) ?><?= $cat !== end($submittedCategories) ? ', ' : '' ?>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            -
+                        <?php endif; ?>
+                    </span>
                 </div>
                 <div class="info-item">
                     <span class="label">Price:</span>
@@ -1510,9 +1756,9 @@ Oak Table,tables,450,&quot;rustic,medium&quot;,"></textarea>
         
         <h3>Example CSV</h3>
         <pre style="background: var(--bg-elevated); padding: 1rem; border-radius: var(--radius-sm); overflow-x: auto;">name,category_slug,price,tags,image_url
-"prop_sofa_modern_01",seating,1500,"modern,luxury",
-"prop_table_wood_01",tables,800,"rustic,large",
-"prop_lamp_desk_01",lighting,150,"modern,small",</pre>
+"Black Double Bed",seating,1500,"modern,luxury",
+"Showerhead Advanced",bathroom,800,"rustic,large",
+"Victorian Justice Lamp",lighting,150,"modern,small",</pre>
     </div>
     <?php
 }
