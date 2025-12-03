@@ -1,87 +1,15 @@
 /**
  * GTAW Furniture Catalog - Main Stylesheet
  * Dark theme with GTA World inspired colors
+ * 
+ * NOTE: Base styles (custom properties, toasts, modals, buttons, badges)
+ * are now in base.css. Include base.css before this file.
  */
 
 /* ============================================
-   CSS CUSTOM PROPERTIES
+   LAYOUT
    ============================================ */
-:root {
-    /* Brand colors */
-    --primary: #f97316;
-    --primary-hover: #ea580c;
-    --primary-focus: rgba(249, 115, 22, 0.25);
-    
-    /* Background colors */
-    --bg-dark: #0a0a0a;
-    --bg-surface: #141414;
-    --bg-card: #1a1a1a;
-    --bg-elevated: #262626;
-    
-    /* Text colors */
-    --text-primary: #fafafa;
-    --text-secondary: #a3a3a3;
-    --text-muted: #737373;
-    
-    /* Semantic colors */
-    --success: #22c55e;
-    --success-bg: rgba(34, 197, 94, 0.1);
-    --error: #ef4444;
-    --error-bg: rgba(239, 68, 68, 0.1);
-    --warning: #eab308;
-    --info: #3b82f6;
-    
-    /* Borders */
-    --border-color: #2a2a2a;
-    --border-color-hover: #404040;
-    
-    /* Spacing */
-    --spacing-xs: 0.25rem;
-    --spacing-sm: 0.5rem;
-    --spacing-md: 1rem;
-    --spacing-lg: 1.5rem;
-    --spacing-xl: 2rem;
-    
-    /* Border radius */
-    --radius-sm: 4px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
-    --radius-full: 9999px;
-    
-    /* Transitions */
-    --transition-fast: 0.15s ease;
-    --transition-normal: 0.2s ease;
-    --transition-slow: 0.3s ease;
-    
-    /* Shadows */
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.3);
-    --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.4);
-}
-
-/* Pico CSS dark theme overrides */
-[data-theme="dark"] {
-    --pico-background-color: var(--bg-dark);
-    --pico-card-background-color: var(--bg-card);
-    --pico-card-sectioning-background-color: var(--bg-surface);
-    --pico-primary: var(--primary);
-    --pico-primary-hover: var(--primary-hover);
-    --pico-color: var(--text-primary);
-    --pico-muted-color: var(--text-secondary);
-    --pico-border-color: var(--border-color);
-}
-
-/* ============================================
-   BASE STYLES
-   ============================================ */
-html {
-    scroll-behavior: smooth;
-}
-
-body {
-    background: var(--bg-dark);
-    color: var(--text-primary);
-    min-height: 100vh;
+   body {
     display: flex;
     flex-direction: column;
 }
@@ -170,22 +98,6 @@ main {
 [data-theme="dark"] .theme-toggle .icon-moon { display: none; }
 [data-theme="light"] .theme-toggle .icon-sun { display: none; }
 [data-theme="light"] .theme-toggle .icon-moon { display: inline; }
-
-/* Light theme overrides */
-[data-theme="light"] {
-    --bg-dark: #f8fafc;
-    --bg-surface: #ffffff;
-    --bg-card: #ffffff;
-    --bg-elevated: #f1f5f9;
-    --text-primary: #0f172a;
-    --text-secondary: #475569;
-    --text-muted: #94a3b8;
-    --border-color: #e2e8f0;
-    --border-color-hover: #cbd5e1;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
-    --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.1);
-}
 
 .user-info {
     display: flex;
@@ -282,119 +194,6 @@ main {
     background: var(--primary-focus);
 }
 
-/* Modal - Matching admin panel styling */
-.modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.8);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 1100;
-    padding: var(--spacing-lg);
-}
-
-.modal-overlay.active {
-    display: flex;
-}
-
-.modal {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    width: 100%;
-    max-width: 500px;
-    max-height: 90vh;
-    overflow-y: auto;
-}
-
-.modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--spacing-lg);
-    border-bottom: 1px solid var(--border-color);
-}
-
-.modal-header h2 {
-    margin: 0;
-    font-size: 1.25rem;
-}
-
-.modal-close {
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 0;
-    line-height: 1;
-}
-
-.modal-close:hover {
-    color: var(--text-primary);
-}
-
-.modal-body {
-    padding: var(--spacing-lg);
-}
-
-.modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-lg);
-    border-top: 1px solid var(--border-color);
-}
-
-/* Modal buttons - matching dashboard styling */
-.modal .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-sm);
-    padding: 0 var(--spacing-lg);
-    height: 38px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    text-decoration: none;
-    transition: all var(--transition-fast);
-    box-sizing: border-box;
-    line-height: 1;
-}
-
-.modal .btn:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-}
-
-.modal .btn:active {
-    transform: scale(0.98);
-}
-
-.modal .btn-primary {
-    background: var(--primary);
-    border-color: var(--primary);
-    color: white;
-}
-
-.modal .btn-primary:hover {
-    background: var(--primary-hover);
-    border-color: var(--primary-hover);
-    color: white;
-}
-
-.modal .btn-sm {
-    padding: 0 var(--spacing-sm);
-    height: 30px;
-    font-size: 0.75rem;
-}
-
 /* ============================================
    SEARCH BAR
    ============================================ */
@@ -479,6 +278,7 @@ main {
     font-family: inherit;
     font-size: 0.75rem;
 }
+
 
 /* ============================================
    FILTERS
@@ -575,22 +375,6 @@ main {
     background: var(--error);
     border-color: var(--error);
     color: white;
-}
-
-/* Old tag-filter styles - keeping for backwards compatibility with other uses */
-.tag-filter.active {
-    background: var(--primary);
-    border-color: var(--primary);
-    color: white;
-}
-
-.tag-filter .remove {
-    font-size: 0.875rem;
-    opacity: 0.7;
-}
-
-.tag-filter .remove:hover {
-    opacity: 1;
 }
 
 /* ============================================
@@ -754,7 +538,8 @@ main {
     flex-shrink: 0;
 }
 
-.furniture-card .tag-more {
+.furniture-card .tag-more,
+.furniture-card .category-more {
     display: inline-block;
     padding: 2px 6px;
     background: var(--bg-elevated);
@@ -765,6 +550,7 @@ main {
     line-height: 1.2;
     white-space: nowrap;
     flex-shrink: 0;
+    cursor: help;
 }
 
 .furniture-card .actions {
@@ -1036,88 +822,6 @@ main {
 }
 
 /* ============================================
-   TOAST NOTIFICATIONS
-   ============================================ */
-.toast-container {
-    position: fixed;
-    bottom: var(--spacing-xl);
-    right: var(--spacing-xl);
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-}
-
-.toast {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-md) var(--spacing-lg);
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-lg);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    animation: slideIn 0.3s ease;
-    max-width: 350px;
-}
-
-.toast-icon {
-    font-size: 1.1rem;
-    flex-shrink: 0;
-}
-
-.toast.success {
-    border-left: 4px solid var(--success);
-}
-
-.toast.success .toast-icon { color: var(--success); }
-
-.toast.error {
-    border-left: 4px solid var(--error);
-}
-
-.toast.error .toast-icon { color: var(--error); }
-
-.toast.info {
-    border-left: 4px solid var(--info);
-}
-
-.toast.info .toast-icon { color: var(--info); }
-
-.toast.warning {
-    border-left: 4px solid var(--warning);
-}
-
-.toast.warning .toast-icon { color: var(--warning); }
-
-.toast.hiding {
-    animation: fadeOut 0.3s ease forwards;
-}
-
-@keyframes slideIn {
-    from {
-        transform: translateX(100%);
-        opacity: 0;
-    }
-    to {
-        transform: translateX(0);
-        opacity: 1;
-    }
-}
-
-@keyframes fadeOut {
-    from {
-        opacity: 1;
-    }
-    to {
-        opacity: 0;
-        transform: translateX(50%);
-    }
-}
-
-/* ============================================
    LOADING OVERLAY
    ============================================ */
 .loading-overlay {
@@ -1300,33 +1004,6 @@ main {
     }
 }
 
-/* ============================================
-   ACCESSIBILITY
-   ============================================ */
-@media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
-    }
-}
-
-/* Focus visible styles */
-:focus-visible {
-    outline: 2px solid var(--primary);
-    outline-offset: 2px;
-}
-
-button:focus-visible,
-a:focus-visible,
-input:focus-visible,
-select:focus-visible {
-    outline: 2px solid var(--primary);
-    outline-offset: 2px;
-}
-
 /* Skip link */
 .skip-link {
     position: absolute;
@@ -1394,32 +1071,104 @@ select:focus-visible {
     }
 }
 
-.lightbox-content img {
-    max-width: 100%;
+/* Image container with fixed dimensions */
+.lightbox-image-container {
+    position: relative;
+    width: 100%;
+    max-width: 90vw;
     max-height: 80vh;
+    min-height: 400px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+    /* Lock dimensions to prevent layout shifts */
+    contain: layout style paint;
+    overflow: hidden;
+}
+
+@supports (aspect-ratio: 4 / 3) {
+    .lightbox-image-container {
+        height: auto;
+        min-height: 0;
+    }
+}
+
+/* Image adapts to fixed container */
+.lightbox-image-container img {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
     object-fit: contain;
     border-radius: var(--radius-md);
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    display: block;
 }
 
-.lightbox-info {
+/* Info card container */
+.lightbox-info-card {
     margin-top: var(--spacing-lg);
+    padding: var(--spacing-lg);
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    width: 600px;
+    max-width: 90vw;
+    margin-left: auto;
+    margin-right: auto;
     text-align: center;
     color: var(--text-primary);
-    max-width: 100%;
+    box-shadow: var(--shadow-lg);
+    /* Prevent layout shifts */
+    min-height: 200px;
 }
 
-.lightbox-info h3 {
+.lightbox-info-card h3 {
     margin: 0 0 var(--spacing-sm);
-    font-size: 1.125rem;
+    font-size: 1.5rem;
     font-weight: 600;
     word-break: break-word;
 }
 
-.lightbox-info .meta {
+.lightbox-info-card .meta {
     color: var(--text-secondary);
     font-size: 0.875rem;
     margin-bottom: var(--spacing-md);
+}
+
+/* Divider */
+.lightbox-divider {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: var(--spacing-md) 0;
+    opacity: 0.5;
+}
+
+/* Tags section - conditional display */
+.lightbox-tags {
+    display: flex;
+    gap: var(--spacing-xs);
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: var(--spacing-md) 0;
+    min-height: 24px;
+}
+
+.lightbox-tags .tag {
+    display: inline-block;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+}
+
+.lightbox-tags .tag:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-focus);
 }
 
 .lightbox-actions {
@@ -1498,6 +1247,15 @@ select:focus-visible {
     background: rgba(59, 130, 246, 0.1);
 }
 
+@keyframes skeleton-loading {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
 .lightbox-close {
     position: fixed;
     top: var(--spacing-lg);
@@ -1565,37 +1323,6 @@ select:focus-visible {
     border-color: var(--border-color);
 }
 
-/* Old flat tag filters section removed - now using grouped tag filters below */
-
-/* ============================================
-   UTILITIES
-   ============================================ */
-.sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-}
-
-.text-center {
-    text-align: center;
-}
-
-.text-muted {
-    color: var(--text-muted);
-}
-
-.mt-0 { margin-top: 0; }
-.mb-0 { margin-bottom: 0; }
-.mb-sm { margin-bottom: var(--spacing-sm); }
-.mb-md { margin-bottom: var(--spacing-md); }
-.mb-lg { margin-bottom: var(--spacing-lg); }
-
 /* ============================================
    RESPONSIVE LIGHTBOX
    ============================================ */
@@ -1620,8 +1347,39 @@ select:focus-visible {
         right: var(--spacing-sm);
     }
     
-    .lightbox-content img {
+    .lightbox-image-container {
+        min-height: 300px;
+        max-width: 95vw;
+    }
+    
+    .lightbox-image-container img {
+        max-width: 95vw;
         max-height: 70vh;
+    }
+    
+    .lightbox-info-card {
+        padding: var(--spacing-md);
+        max-width: 100%;
+    }
+    
+    .lightbox-info-card h3 {
+        font-size: 1.125rem;
+    }
+    
+    .lightbox-tags {
+        justify-content: flex-start;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .lightbox-image-container {
+        max-height: 70vh;
+        /* Slightly different aspect ratio on mobile for better fit */
+        aspect-ratio: 3 / 4;
+    }
+    
+    .lightbox-content img {
+        max-height: 100%;
     }
     
     .lightbox-info h3 {
@@ -1908,4 +1666,3 @@ select:focus-visible {
         max-height: 150px;
     }
 }
-
