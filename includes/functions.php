@@ -1356,20 +1356,38 @@ function isFavorited(PDO $pdo, int $userId, int $furnitureId): bool
  * 
  * Optimized to use a single query with window function for total count,
  * reducing database round-trips from 2 queries to 1.
+ *
+ * Optionally filters by a search term (matches username or main character).
  */
-function getUsers(PDO $pdo, int $page = 1, int $perPage = 50): array
+function getUsers(PDO $pdo, int $page = 1, int $perPage = 50, ?string $search = null): array
 {
     $offset = ($page - 1) * $perPage;
+
+    $where = '';
+    $params = [];
+
+    if ($search !== null && $search !== '') {
+        $like   = '%' . $search . '%';
+        $where  = 'WHERE (u.username LIKE ? OR u.main_character LIKE ?)';
+        $params = [$like, $like];
+    }
     
-    $stmt = $pdo->prepare('
-        SELECT u.*, 
-               (SELECT COUNT(*) FROM favorites WHERE user_id = u.id) as favorites_count,
-               COUNT(*) OVER() as total
+    $sql = "
+        SELECT 
+            u.*, 
+            (SELECT COUNT(*) FROM favorites WHERE user_id = u.id) as favorites_count,
+            COUNT(*) OVER() as total
         FROM users u
+        {$where}
         ORDER BY u.last_login DESC
         LIMIT ? OFFSET ?
-    ');
-    $stmt->execute([$perPage, $offset]);
+    ";
+
+    $params[] = $perPage;
+    $params[] = $offset;
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
     $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     $total = !empty($items) ? (int) ($items[0]['total'] ?? 0) : 0;
@@ -1493,7 +1511,7 @@ function getPopularFurniture(PDO $pdo, int $limit = 10): array
             f.name, 
             f.price, 
             f.image_url,
-            COUNT(fav.id) as favorite_count
+            COUNT(fav.furniture_id) as favorite_count
         FROM furniture f
         LEFT JOIN favorites fav ON f.id = fav.furniture_id
         GROUP BY f.id
@@ -1521,7 +1539,7 @@ function getCategoryStats(PDO $pdo): array
             c.name,
             c.icon,
             COUNT(DISTINCT fc.furniture_id) as item_count,
-            COUNT(fav.id) as favorite_count
+            COUNT(fav.furniture_id) as favorite_count
         FROM categories c
         LEFT JOIN furniture_categories fc ON c.id = fc.category_id
         LEFT JOIN favorites fav ON fc.furniture_id = fav.furniture_id
