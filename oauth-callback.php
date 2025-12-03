@@ -13,7 +13,12 @@ require_once __DIR__ . '/includes/auth.php';
 // Error helper
 function oauthError(string $message): never
 {
-    error_log("OAuth Error: {$message}");
+    // Log via centralized helper if available
+    if (function_exists('logException')) {
+        logException('oauth', new RuntimeException($message));
+    } else {
+        error_log("OAuth Error: {$message}");
+    }
     
     // Show user-friendly error page
     http_response_code(400);
