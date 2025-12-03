@@ -69,22 +69,38 @@ CREATE TABLE IF NOT EXISTS tags (
 CREATE TABLE IF NOT EXISTS furniture (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    category_id INT UNSIGNED NOT NULL,
     price INT UNSIGNED DEFAULT 0,
     image_url VARCHAR(500) DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
-    CONSTRAINT fk_furniture_category 
-        FOREIGN KEY (category_id) REFERENCES categories(id)
-        ON DELETE RESTRICT ON UPDATE CASCADE,
-    
     INDEX idx_name (name),
-    INDEX idx_category (category_id),
     INDEX idx_price (price),
     INDEX idx_created_at (created_at),
     INDEX idx_updated_at (updated_at),
     FULLTEXT idx_search (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =============================================
+-- FURNITURE_CATEGORIES
+-- Many-to-many relationship between furniture and categories
+-- =============================================
+CREATE TABLE IF NOT EXISTS furniture_categories (
+    furniture_id INT UNSIGNED NOT NULL,
+    category_id INT UNSIGNED NOT NULL,
+    is_primary TINYINT(1) NOT NULL DEFAULT 0,
+    
+    PRIMARY KEY (furniture_id, category_id),
+    
+    CONSTRAINT fk_fc_furniture 
+        FOREIGN KEY (furniture_id) REFERENCES furniture(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_fc_category 
+        FOREIGN KEY (category_id) REFERENCES categories(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    
+    INDEX idx_category (category_id),
+    INDEX idx_primary (furniture_id, is_primary)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================
@@ -280,7 +296,8 @@ INSERT INTO `categories` (`id`, `name`, `slug`, `icon`, `sort_order`, `created_a
 (24, 'Tools & Equipment', 'tools-equipment', '🛠', 24, '2025-12-01 14:24:25'),
 (25, 'Signs & Labels', 'signs-labels', '🚧', 25, '2025-12-01 14:24:39'),
 (26, 'Vehicles & Garage', 'vehicles-garage', '🚗', 26, '2025-12-01 14:24:51'),
-(99, 'Miscellaneous', 'miscellaneous', '📦', 99, '2025-12-01 14:25:04');
+(99, 'Miscellaneous', 'miscellaneous', '📦', 99, '2025-12-01 14:25:04')
+ON DUPLICATE KEY UPDATE name = VALUES(name);
 
 -- =============================================
 -- SEED DATA: Default Tag Groups
@@ -293,7 +310,7 @@ INSERT INTO `tag_groups` (`id`, `name`, `slug`, `color`, `sort_order`, `created_
 (5, 'Materials', 'materials', '#6366f1', 5, '2025-12-01 15:13:05'),
 (6, 'Color', 'color', '#ec4899', 6, '2025-12-01 15:13:05'),
 (7, 'Effects', 'effects', '#a855f7', 7, '2025-12-01 15:13:05'),
-(8, 'Theme', 'theme', '#6b7280', 8, '2025-12-01 15:13:05');
+(8, 'Theme', 'theme', '#6b7280', 8, '2025-12-01 15:13:05')
 ON DUPLICATE KEY UPDATE name = VALUES(name);
 
 -- =============================================
@@ -387,172 +404,8 @@ INSERT INTO tags (name, slug, color, group_id) VALUES
 ('music', 'music', '#6b7280', 8),
 ('arcade', 'arcade', '#6b7280', 8),
 ('lux-brand', 'lux-brand', '#6b7280', 8),
-('street-style', 'street-style', '#6b7280', 8),
+('street', 'street', '#6b7280', 8),
 ('racing', 'racing', '#6b7280', 8),
 ('crime', 'crime', '#6b7280', 8),
 ('professional', 'professional', '#6b7280', 8)
 ON DUPLICATE KEY UPDATE group_id = VALUES(group_id);
-
--- =============================================
--- SEED DATA: Example Furniture Items
--- =============================================
-
-INSERT INTO `furniture` (`id`, `name`, `category_id`, `price`, `image_url`, `created_at`, `updated_at`) VALUES
-(54, 'Black Double Bed', 4, 250, '/images/furniture/furniture_54_1764557801_aa43a835.webp', '2025-12-01 02:56:40', '2025-12-01 02:56:41'),
-(55, 'Black Frame Bed with Nightstands', 4, 250, '/images/furniture/furniture_55_1764557844_3b46f59d.webp', '2025-12-01 02:57:23', '2025-12-01 02:57:24'),
-(56, 'Black Jersey Double bed', 4, 250, '/images/furniture/furniture_56_1764557858_f3c35c56.webp', '2025-12-01 02:57:37', '2025-12-01 02:57:38'),
-(57, 'Fairy Lights Bed', 4, 250, '/images/furniture/furniture_57_1764557875_345041e6.webp', '2025-12-01 02:57:54', '2025-12-01 02:57:55'),
-(58, 'Fancy Wooden Double Bed', 4, 250, '/images/furniture/furniture_58_1764557888_e1ea615d.webp', '2025-12-01 02:58:08', '2025-12-01 02:58:08'),
-(59, 'Grey Bed with Pillows', 4, 250, '/images/furniture/furniture_59_1764557903_2562cd97.webp', '2025-12-01 02:58:23', '2025-12-01 02:58:23'),
-(60, 'Hospital Bed Blue', 4, 250, '/images/furniture/furniture_60_1764557946_3f302f1a.webp', '2025-12-01 02:59:05', '2025-12-01 02:59:06'),
-(61, 'Hospital Bed Green', 4, 250, '/images/furniture/furniture_61_1764557957_edd7998e.webp', '2025-12-01 02:59:16', '2025-12-01 02:59:17'),
-(62, 'Iron Double Bed', 4, 250, '/images/furniture/furniture_62_1764557976_b329a028.webp', '2025-12-01 02:59:35', '2025-12-01 02:59:36'),
-(63, 'Iron Single Bed', 4, 250, '/images/furniture/furniture_63_1764557987_730add71.webp', '2025-12-01 02:59:46', '2025-12-01 02:59:47'),
-(64, 'Worn Cream Desk Lamp', 8, 250, '/images/furniture/furniture_64_1764558044_f7bdbed9.webp', '2025-12-01 03:00:43', '2025-12-01 03:00:44'),
-(65, 'White Modern Table Lamp', 8, 250, '/images/furniture/furniture_65_1764558056_a9e3866e.webp', '2025-12-01 03:00:55', '2025-12-01 03:00:56'),
-(66, 'Victorian Justice Lamp', 8, 250, '/images/furniture/furniture_66_1764558070_ea52cec5.webp', '2025-12-01 03:01:10', '2025-12-01 03:01:10'),
-(67, 'Standing Photoshoot Lights', 8, 250, '/images/furniture/furniture_67_1764558092_e72bf9ae.webp', '2025-12-01 03:01:31', '2025-12-01 03:01:32'),
-(68, 'Road Construction Light', 8, 250, '/images/furniture/furniture_68_1764558108_abb84846.webp', '2025-12-01 03:01:48', '2025-12-01 03:01:48'),
-(69, 'Low Wooden Cabinet', 5, 250, '/images/furniture/furniture_69_1764558141_c5c94a08.webp', '2025-12-01 03:02:20', '2025-12-01 03:02:21'),
-(70, 'Tall Wooden Cabinet', 5, 250, '/images/furniture/furniture_70_1764558152_9edff197.webp', '2025-12-01 03:02:32', '2025-12-01 03:02:32'),
-(71, 'Tall Grey Filing Cabinet', 5, 250, '/images/furniture/furniture_71_1764558166_dc721d53.webp', '2025-12-01 03:02:46', '2025-12-01 03:02:46'),
-(72, 'Laptop 3', 10, 250, '/images/furniture/furniture_72_1764558190_ee4e185b.webp', '2025-12-01 03:03:09', '2025-12-01 03:03:10'),
-(74, 'Modern Metal Toilet', 7, 250, '/images/furniture/furniture_74_1764558260_df50cea6.webp', '2025-12-01 03:04:19', '2025-12-01 03:04:20'),
-(75, 'Modern Metal Urinal', 7, 250, '/images/furniture/furniture_75_1764558270_e69a00cc.webp', '2025-12-01 03:04:30', '2025-12-01 03:04:30'),
-(76, 'Showerhead Advanced', 7, 250, '/images/furniture/furniture_76_1764558294_99356149.webp', '2025-12-01 03:04:53', '2025-12-01 03:04:54');
-
--- Beds: modern / cozy / fabric / dark-tone
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('modern', 'cozy', 'fabric', 'dark-tone')
-WHERE f.name = 'Black Double Bed'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('modern', 'cozy', 'fabric', 'light-tone')
-WHERE f.name = 'Black Frame Bed with Nightstands'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('minimalist', 'cozy', 'fabric', 'dark-tone')
-WHERE f.name = 'Black Jersey Double bed'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
--- Fairy lights bed: boho, romantic, light effects, colorful
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('boho', 'romantic', 'light-fx', 'colorful')
-WHERE f.name = 'Fairy Lights Bed'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
--- Fancy wooden bed: classic, luxury, wood, large
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('classic', 'luxury', 'wood', 'large')
-WHERE f.name = 'Fancy Wooden Double Bed'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
--- Hospital beds: industrial, gritty, metal, medical theme
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('industrial', 'gritty', 'metal', 'medical')
-WHERE f.name IN ('Hospital Bed Blue', 'Hospital Bed Green')
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
--- Iron beds: industrial, gritty, metal, compact/medium
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('industrial', 'gritty', 'metal', 'medium')
-WHERE f.name = 'Iron Double Bed'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('industrial', 'gritty', 'metal', 'compact')
-WHERE f.name = 'Iron Single Bed'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
--- Lamps: vintage/modern, cozy, light-fx, glowing
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('vintage', 'cozy', 'light-fx', 'glowing')
-WHERE f.name = 'Worn Cream Desk Lamp'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('modern', 'minimalist', 'light-fx', 'bright')
-WHERE f.name = 'White Modern Table Lamp'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('classic', 'luxury', 'light-fx')
-WHERE f.name = 'Victorian Justice Lamp'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('industrial', 'light-fx', 'professional')
-WHERE f.name = 'Standing Photoshoot Lights'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('industrial', 'light-fx', 'street-style')
-WHERE f.name = 'Road Construction Light'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
--- Cabinets: wood storage, professional/office
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('modern', 'wood', 'medium', 'professional')
-WHERE f.name = 'Low Wooden Cabinet'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('classic', 'wood', 'large', 'professional')
-WHERE f.name = 'Tall Wooden Cabinet'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('professional', 'industrial', 'metal')
-WHERE f.name = 'Tall Grey Filing Cabinet'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
--- Electronics: modern, professional
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('modern', 'professional', 'dark-tone')
-WHERE f.name = 'Laptop 3'
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
--- Bathroom fixtures: modern, industrial, metal, water effects
-INSERT INTO furniture_tags (furniture_id, tag_id)
-SELECT f.id, t.id
-FROM furniture f
-JOIN tags t ON t.slug IN ('modern', 'industrial', 'metal', 'water-fx')
-WHERE f.name IN ('Modern Metal Toilet', 'Modern Metal Urinal', 'Showerhead Advanced')
-ON DUPLICATE KEY UPDATE furniture_id = furniture_id;
-
