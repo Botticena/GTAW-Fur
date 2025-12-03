@@ -31,6 +31,23 @@ header('X-Frame-Options: SAMEORIGIN');
 header('X-XSS-Protection: 1; mode=block');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 
+// Content Security Policy (Enforcement mode)
+// Note: 'unsafe-inline' for scripts is needed for onclick handlers throughout the app
+// Monitor browser console and server logs for CSP violations after deployment
+$cspDirectives = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "frame-ancestors 'self'",
+    "form-action 'self'",
+    "base-uri 'self'",
+    "object-src 'none'"
+];
+header('Content-Security-Policy: ' . implode('; ', $cspDirectives));
+
 // Secure session configuration
 ini_set('session.cookie_httponly', '1');
 ini_set('session.cookie_samesite', 'Lax');
@@ -60,7 +77,7 @@ require_once __DIR__ . '/csrf.php';
 /**
  * Maximum number of items per page in pagination
  */
-const MAX_ITEMS_PER_PAGE = 100;
+const MAX_ITEMS_PER_PAGE = 50;
 
 /**
  * Minimum search query length (characters)
@@ -85,6 +102,33 @@ const RATE_LIMIT_FAVORITES = ['max' => 30, 'window' => 60];
 const RATE_LIMIT_COLLECTIONS_CREATE = ['max' => 10, 'window' => 60];
 const RATE_LIMIT_COLLECTIONS_ITEMS = ['max' => 50, 'window' => 60];
 const RATE_LIMIT_SUBMISSIONS_CREATE = ['max' => 5, 'window' => 60];
+
+/**
+ * Cache TTL constants (in seconds)
+ */
+const CACHE_TTL_CATEGORIES = 300; // 5 minutes
+const CACHE_TTL_TAGS = 300; // 5 minutes
+const CACHE_TTL_TAG_GROUPS = 300; // 5 minutes
+
+/**
+ * Centralized exception logging helper.
+ *
+ * @param string    $context Short context string (e.g., 'api', 'dashboard_api', 'admin_api', 'oauth')
+ * @param Throwable $e       Exception to log
+ */
+function logException(string $context, Throwable $e): void
+{
+    $message = sprintf(
+        '[%s] %s: %s in %s:%d',
+        $context,
+        get_class($e),
+        $e->getMessage(),
+        $e->getFile(),
+        $e->getLine()
+    );
+
+    error_log($message);
+}
 
 /**
  * Get configuration value
