@@ -16,6 +16,8 @@ declare(strict_types=1);
                 <a href="https://forum.gta.world/en/profile/56418-lena/" target="_blank" rel="noopener"> Lena </a>
                 for the GTA World Community
                 <span class="text-muted"> • </span>
+                <a href="https://forum.gta.world/en/topic/152514-gtaw-furniture-catalog" target="_blank" rel="noopener">Forums</a>
+                <span class="text-muted"> • </span>
                 <a href="https://github.com/Botticena/GTAW-Fur" target="_blank" rel="noopener">GitHub</a>
                 <span class="text-muted"> • </span>
                 <span class="text-muted">Not affiliated with GTA World</span>
