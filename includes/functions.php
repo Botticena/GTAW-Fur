@@ -2,31 +2,9 @@
 /**
  * GTAW Furniture Catalog - Data Functions
  * 
- * All data retrieval and manipulation functions.
- * 
- * ERROR HANDLING PATTERN:
- * 
- * This file follows a consistent error handling pattern:
- * 
- * 1. Return false/null for EXPECTED business conditions:
- *    - Item not found (e.g., furniture doesn't exist)
- *    - Already exists (e.g., already favorited)
- *    - Business logic constraints (e.g., cannot delete category with items)
- *    These are normal business outcomes, not errors.
- * 
- * 2. Throw RuntimeException for UNEXPECTED errors:
- *    - Database connection failures
- *    - SQL execution failures
- *    - Invalid state (e.g., no data to update)
- *    - System-level errors
- *    These indicate something went wrong that shouldn't happen.
- * 
- * Examples:
- * - addFavorite() returns false if already favorited (expected) but throws on DB error (unexpected)
- * - removeFavorite() returns false if not found (expected) but throws on DB error (unexpected)
- * - updateFurniture() throws RuntimeException on any failure (all failures are unexpected)
- * 
- * This pattern allows callers to distinguish between expected business outcomes and actual errors.
+ * Error handling pattern:
+ * - Return false/null for expected conditions (not found, already exists)
+ * - Throw RuntimeException for unexpected errors (DB failures, invalid state)
  */
 
 declare(strict_types=1);
@@ -37,13 +15,8 @@ if (basename($_SERVER['PHP_SELF']) === 'functions.php') {
     exit('Direct access forbidden');
 }
 
-// Load utility functions
 require_once __DIR__ . '/utils.php';
-
-// Load repository base class
 require_once __DIR__ . '/repository.php';
-
-// Load validator class
 require_once __DIR__ . '/validator.php';
 
 // ============================================
@@ -65,18 +38,22 @@ require_once __DIR__ . '/validator.php';
 function getFurnitureList(
     PDO $pdo,
     int $page = 1,
-    int $perPage = 24,
+    int $perPage = 50,
     ?string $category = null,
     array $tags = [],
     string $sort = 'name',
     string $order = 'asc',
     ?int $userFavoritesId = null
 ): array {
+    if (!is_array($tags)) {
+        $tags = [];
+    }
+    $tags = array_filter(array_map('trim', array_map('strval', $tags)));
+    
     $perPage = min(max(1, $perPage), MAX_ITEMS_PER_PAGE);
     $page = max(1, $page);
     $offset = ($page - 1) * $perPage;
     
-    // Validate sort column
     $validSorts = ['name', 'price', 'created_at'];
     $sortColumn = in_array($sort, $validSorts) ? $sort : 'name';
     if ($sort === 'newest') {
@@ -86,23 +63,23 @@ function getFurnitureList(
     
     $orderDir = strtoupper($order) === 'DESC' ? 'DESC' : 'ASC';
     
-    // Build query
     $where = [];
     $params = [];
     $extraJoins = '';
     
+    // Category filter via junction table
+    $categoryJoin = '';
     if ($category) {
-        $where[] = 'c.slug = ?';
+        $categoryJoin = 'INNER JOIN furniture_categories fc_filter ON f.id = fc_filter.furniture_id
+                         INNER JOIN categories c_filter ON fc_filter.category_id = c_filter.id AND c_filter.slug = ?';
         $params[] = $category;
     }
     
-    // Handle favorites-only filter
     if ($userFavoritesId !== null) {
         $extraJoins .= ' INNER JOIN favorites fav ON f.id = fav.furniture_id AND fav.user_id = ?';
         $params[] = $userFavoritesId;
     }
     
-    // Handle tags filter
     $tagJoin = '';
     if (!empty($tags)) {
         $tags = array_filter(array_map('trim', $tags));
@@ -116,10 +93,9 @@ function getFurnitureList(
     
     $whereClause = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';
     
-    // Count total
     $countSql = "SELECT COUNT(DISTINCT f.id) 
                  FROM furniture f
-                 INNER JOIN categories c ON f.category_id = c.id
+                 {$categoryJoin}
                  {$extraJoins}
                  {$tagJoin}
                  {$whereClause}";
@@ -128,11 +104,9 @@ function getFurnitureList(
     $stmt->execute($params);
     $total = (int) $stmt->fetchColumn();
     
-    // Get items
-    $sql = "SELECT DISTINCT f.id, f.name, f.category_id, f.price, f.image_url, f.created_at,
-                   c.name as category_name, c.slug as category_slug
+    $sql = "SELECT DISTINCT f.id, f.name, f.price, f.image_url, f.created_at
             FROM furniture f
-            INNER JOIN categories c ON f.category_id = c.id
+            {$categoryJoin}
             {$extraJoins}
             {$tagJoin}
             {$whereClause}
@@ -146,7 +120,7 @@ function getFurnitureList(
     $stmt->execute($params);
     $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // Load tags for each item
+    $items = attachCategoriesToFurniture($pdo, $items);
     $items = attachTagsToFurniture($pdo, $items);
     
     return [
@@ -158,21 +132,25 @@ function getFurnitureList(
 /**
  * Search furniture by name, category, and tags
  * 
- * Searches across:
- * - Furniture name
- * - Category name
- * - Tag names
- * 
- * Results are ordered by relevance (name matches first, then category, then tags)
+ * Supports synonym expansion for improved search discovery.
+ * When synonyms are expanded, returns search_meta with the original and expanded terms.
  * 
  * @param PDO $pdo Database connection
  * @param string $query Search query
- * @param int $page Current page number
+ * @param int $page Page number
  * @param int $perPage Items per page
- * @param int|null $userFavoritesId If set, only return favorites for this user ID
+ * @param int|null $userFavoritesId Filter to user's favorites only
+ * @param bool $expandSynonyms Expand query with synonyms (default: true)
+ * @return array ['items' => [...], 'pagination' => [...], 'search_meta' => [...]]
  */
-function searchFurniture(PDO $pdo, string $query, int $page = 1, int $perPage = 24, ?int $userFavoritesId = null): array
-{
+function searchFurniture(
+    PDO $pdo, 
+    string $query, 
+    int $page = 1, 
+    int $perPage = 50, 
+    ?int $userFavoritesId = null,
+    bool $expandSynonyms = true
+): array {
     if (strlen($query) < MIN_SEARCH_LENGTH) {
         return ['items' => [], 'pagination' => createPagination(0, $page, $perPage)];
     }
@@ -181,10 +159,11 @@ function searchFurniture(PDO $pdo, string $query, int $page = 1, int $perPage = 
     $page = max(1, $page);
     $offset = ($page - 1) * $perPage;
     
-    // Use LIKE for search across name, category, and tags
-    $searchTerm = '%' . $query . '%';
+    // Synonym expansion
+    $originalQuery = trim($query);
+    $searchTerms = $expandSynonyms ? expandSearchTerms($query) : [$query];
+    $wasExpanded = count($searchTerms) > 1;
     
-    // Build favorites join if needed
     $favoritesJoin = '';
     $favoritesParams = [];
     if ($userFavoritesId !== null) {
@@ -192,50 +171,57 @@ function searchFurniture(PDO $pdo, string $query, int $page = 1, int $perPage = 
         $favoritesParams[] = $userFavoritesId;
     }
     
-    // Count total distinct furniture items matching the search
+    $searchConditions = [];
+    $searchParams = [];
+    foreach ($searchTerms as $term) {
+        $termLike = '%' . $term . '%';
+        $searchConditions[] = "(f.name LIKE ? OR c_search.name LIKE ? OR t.name LIKE ?)";
+        $searchParams = array_merge($searchParams, [$termLike, $termLike, $termLike]);
+    }
+    $searchWhere = '(' . implode(' OR ', $searchConditions) . ')';
+    
     $countSql = "
         SELECT COUNT(DISTINCT f.id) 
         FROM furniture f
-        INNER JOIN categories c ON f.category_id = c.id
         {$favoritesJoin}
+        LEFT JOIN furniture_categories fc_search ON f.id = fc_search.furniture_id
+        LEFT JOIN categories c_search ON fc_search.category_id = c_search.id
         LEFT JOIN furniture_tags ft ON f.id = ft.furniture_id
         LEFT JOIN tags t ON ft.tag_id = t.id
-        WHERE (f.name LIKE ? 
-           OR c.name LIKE ? 
-           OR t.name LIKE ?)
+        WHERE {$searchWhere}
     ";
     
-    $countParams = array_merge($favoritesParams, [$searchTerm, $searchTerm, $searchTerm]);
+    $countParams = array_merge($favoritesParams, $searchParams);
     $stmt = $pdo->prepare($countSql);
     $stmt->execute($countParams);
     $total = (int) $stmt->fetchColumn();
     
-    // Get items with relevance ordering
-    // Name matches are most relevant, then category, then tags
+    $primaryTerm = '%' . $originalQuery . '%';
+    
     $sql = "
-        SELECT DISTINCT f.id, f.name, f.category_id, f.price, f.image_url, f.created_at,
-               c.name as category_name, c.slug as category_slug,
+        SELECT DISTINCT f.id, f.name, f.price, f.image_url, f.created_at,
                CASE 
                    WHEN f.name LIKE ? THEN 1
-                   WHEN c.name LIKE ? THEN 2
+                   WHEN EXISTS (SELECT 1 FROM furniture_categories fc2 
+                                INNER JOIN categories c2 ON fc2.category_id = c2.id 
+                                WHERE fc2.furniture_id = f.id AND c2.name LIKE ?) THEN 2
                    ELSE 3
                END as relevance
         FROM furniture f
-        INNER JOIN categories c ON f.category_id = c.id
         {$favoritesJoin}
+        LEFT JOIN furniture_categories fc_search ON f.id = fc_search.furniture_id
+        LEFT JOIN categories c_search ON fc_search.category_id = c_search.id
         LEFT JOIN furniture_tags ft ON f.id = ft.furniture_id
         LEFT JOIN tags t ON ft.tag_id = t.id
-        WHERE (f.name LIKE ? 
-           OR c.name LIKE ? 
-           OR t.name LIKE ?)
+        WHERE {$searchWhere}
         ORDER BY relevance ASC, f.name ASC
         LIMIT ? OFFSET ?
     ";
     
     $params = array_merge(
-        [$searchTerm, $searchTerm],  // For CASE statement
-        $favoritesParams,             // For favorites join
-        [$searchTerm, $searchTerm, $searchTerm], // For WHERE clause
+        [$primaryTerm, $primaryTerm],  // For CASE statement (prioritize original query)
+        $favoritesParams,               // For favorites join
+        $searchParams,                  // For WHERE clause (all terms)
         [$perPage, $offset]
     );
     
@@ -243,42 +229,262 @@ function searchFurniture(PDO $pdo, string $query, int $page = 1, int $perPage = 
     $stmt->execute($params);
     $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // Remove relevance field from results (internal use only)
     foreach ($items as &$item) {
         unset($item['relevance']);
     }
     
+    $items = attachCategoriesToFurniture($pdo, $items);
     $items = attachTagsToFurniture($pdo, $items);
     
-    return [
+    $result = [
         'items' => $items,
         'pagination' => createPagination($total, $page, $perPage),
     ];
+    
+    if ($wasExpanded) {
+        $result['search_meta'] = [
+            'original' => $originalQuery,
+            'expanded_to' => array_slice($searchTerms, 1), // Exclude original
+            'expanded_term' => $searchTerms[1] ?? null, // Primary expansion for UI hint
+        ];
+    }
+    
+    return $result;
+}
+
+/**
+ * Get synonym map (cached in memory after first load)
+ * 
+ * @return array Synonym map: ['term' => ['synonym1', 'synonym2', ...]]
+ */
+function getSynonyms(): array
+{
+    static $synonyms = null;
+    if ($synonyms === null) {
+        $file = __DIR__ . '/synonyms.php';
+        $synonyms = file_exists($file) ? require $file : [];
+    }
+    return $synonyms;
+}
+
+/**
+ * Expand search query with synonyms
+ * 
+ * Returns the original query plus any synonym matches for OR searching.
+ * Performs both direct lookup (query is a key) and reverse lookup
+ * (query appears in a synonym list).
+ * 
+ * @param string $query Search query to expand
+ * @return array Array of search terms including original and synonyms
+ */
+function expandSearchTerms(string $query): array
+{
+    $synonyms = getSynonyms();
+    $query = strtolower(trim($query));
+    
+    if (strlen($query) < 2) {
+        return [$query];
+    }
+    
+    $expanded = [$query];
+    
+    // Direct lookup: query is a canonical term
+    if (isset($synonyms[$query])) {
+        $expanded = array_merge($expanded, $synonyms[$query]);
+    }
+    
+    // Reverse lookup: query is a synonym of something
+    foreach ($synonyms as $canonical => $syns) {
+        if (in_array($query, $syns, true)) {
+            $expanded[] = $canonical;
+            break; // Only need to find one canonical match
+        }
+    }
+    
+    return array_unique($expanded);
+}
+
+/**
+ * Find potential duplicate furniture items
+ * 
+ * Strict matching - only finds exact name matches (case-insensitive).
+ * Same category adds bonus points to prioritize more likely duplicates.
+ * 
+ * Scoring:
+ * - Exact name match: 100 points
+ * - Same category bonus: +20 points
+ * 
+ * This is an advisory feature to help users avoid creating duplicates.
+ * It does not block submissions.
+ * 
+ * @param PDO $pdo Database connection
+ * @param string $name Furniture name to check (exact match)
+ * @param int|null $categoryId Category ID for bonus scoring
+ * @param int|null $excludeId Exclude this ID (for edit forms)
+ * @param int $limit Maximum results (default 5)
+ * @return array Matches with similarity scores
+ */
+function findPotentialDuplicates(
+    PDO $pdo,
+    string $name,
+    ?int $categoryId = null,
+    ?int $excludeId = null,
+    int $limit = 5
+): array {
+    $name = trim($name);
+    if (strlen($name) < 3) {
+        return [];
+    }
+    
+    $normalizedName = strtolower($name);
+    
+    // Check if item shares at least one category with the provided category
+    $sql = "
+        SELECT DISTINCT
+            f.id, 
+            f.name, 
+            f.price, 
+            f.image_url,
+            100 + CASE WHEN EXISTS (
+                SELECT 1 FROM furniture_categories fc2 
+                WHERE fc2.furniture_id = f.id AND fc2.category_id = :cat_id
+            ) THEN 20 ELSE 0 END as similarity_score
+        FROM furniture f
+        WHERE LOWER(f.name) = :exact_name
+    ";
+    
+    $params = [
+        ':exact_name' => $normalizedName,
+        ':cat_id' => $categoryId ?? 0,
+    ];
+    
+    if ($excludeId !== null) {
+        $sql .= " AND f.id != :exclude_id";
+        $params[':exclude_id'] = $excludeId;
+    }
+    
+    $sql .= " ORDER BY similarity_score DESC, f.name ASC LIMIT :limit";
+    
+    $stmt = $pdo->prepare($sql);
+    
+    // Bind parameters - limit requires explicit INT type
+    foreach ($params as $key => $value) {
+        $stmt->bindValue($key, $value);
+    }
+    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+    
+    $stmt->execute();
+    $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Attach categories
+    return attachCategoriesToFurniture($pdo, $items);
+}
+
+/**
+ * Get related furniture based on shared tags and category
+ * 
+ * Algorithm:
+ * 1. Find items sharing tags with current item
+ * 2. Prioritize same-category matches
+ * 3. Order by shared tag count, then random for variety
+ */
+function getRelatedFurniture(PDO $pdo, int $id, int $limit = 4): array
+{
+    // Get primary category and tags for current item
+    $stmt = $pdo->prepare('
+        SELECT fc.category_id, GROUP_CONCAT(DISTINCT ft.tag_id) as tag_ids
+        FROM furniture f
+        LEFT JOIN furniture_categories fc ON f.id = fc.furniture_id AND fc.is_primary = 1
+        LEFT JOIN furniture_tags ft ON f.id = ft.furniture_id
+        WHERE f.id = ?
+        GROUP BY f.id, fc.category_id
+    ');
+    $stmt->execute([$id]);
+    $current = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$current) {
+        return [];
+    }
+    
+    $categoryId = (int)($current['category_id'] ?? 0);
+    $tagIds = $current['tag_ids'] ? explode(',', $current['tag_ids']) : [];
+    
+    if (empty($tagIds)) {
+        // No tags - find items in same category
+        $stmt = $pdo->prepare('
+            SELECT DISTINCT f.id, f.name, f.price, f.image_url
+            FROM furniture f
+            INNER JOIN furniture_categories fc ON f.id = fc.furniture_id
+            WHERE fc.category_id = ? AND f.id != ?
+            ORDER BY f.created_at DESC, f.id DESC
+            LIMIT ?
+        ');
+        $stmt->bindValue(1, $categoryId, PDO::PARAM_INT);
+        $stmt->bindValue(2, $id, PDO::PARAM_INT);
+        $stmt->bindValue(3, $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return attachCategoriesToFurniture($pdo, $items);
+    }
+    
+    $placeholders = implode(',', array_fill(0, count($tagIds), '?'));
+    
+    $sql = "
+        SELECT 
+            f.id, 
+            f.name, 
+            f.price, 
+            f.image_url,
+            COUNT(DISTINCT ft.tag_id) as shared_tags,
+            EXISTS (
+                SELECT 1 FROM furniture_categories fc2 
+                WHERE fc2.furniture_id = f.id AND fc2.category_id = ?
+            ) as same_category
+        FROM furniture f
+        INNER JOIN furniture_tags ft ON f.id = ft.furniture_id
+        WHERE ft.tag_id IN ({$placeholders})
+          AND f.id != ?
+        GROUP BY f.id, f.name, f.price, f.image_url
+        ORDER BY same_category DESC, shared_tags DESC, f.id DESC
+        LIMIT ?
+    ";
+    
+    $stmt = $pdo->prepare($sql);
+    
+    $paramIndex = 1;
+    $stmt->bindValue($paramIndex++, $categoryId, PDO::PARAM_INT);
+    foreach ($tagIds as $tagId) {
+        $stmt->bindValue($paramIndex++, (int)$tagId, PDO::PARAM_INT);
+    }
+    $stmt->bindValue($paramIndex++, $id, PDO::PARAM_INT);
+    $stmt->bindValue($paramIndex, $limit, PDO::PARAM_INT);
+    
+    $stmt->execute();
+    $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    return attachCategoriesToFurniture($pdo, $items);
 }
 
 /**
  * Get single furniture item by ID
  * 
- * Optimized to use a single query with JOINs and subqueries,
- * reducing database round-trips from 3 queries to 1.
+ * Returns categories array with primary category first.
+ * Backwards compatible: also sets category_id, category_name, category_slug from primary.
  */
 function getFurnitureById(PDO $pdo, int $id): ?array
 {
     $stmt = $pdo->prepare('
-        SELECT f.id, f.name, f.category_id, f.price, f.image_url, f.created_at, f.updated_at,
-               c.name as category_name, c.slug as category_slug,
+        SELECT f.id, f.name, f.price, f.image_url, f.created_at, f.updated_at,
                (SELECT COUNT(*) FROM favorites WHERE furniture_id = f.id) as favorite_count,
                GROUP_CONCAT(
                    JSON_OBJECT("id", t.id, "name", t.name, "slug", t.slug, "color", t.color)
                    ORDER BY t.name SEPARATOR "|||"
                ) as tags_json
         FROM furniture f
-        INNER JOIN categories c ON f.category_id = c.id
         LEFT JOIN furniture_tags ft ON f.id = ft.furniture_id
         LEFT JOIN tags t ON ft.tag_id = t.id
         WHERE f.id = ?
-        GROUP BY f.id, f.name, f.category_id, f.price, f.image_url, f.created_at, f.updated_at,
-                 c.name, c.slug
+        GROUP BY f.id, f.name, f.price, f.image_url, f.created_at, f.updated_at
     ');
     $stmt->execute([$id]);
     $item = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -287,7 +493,6 @@ function getFurnitureById(PDO $pdo, int $id): ?array
         return null;
     }
     
-    // Parse tags JSON
     $item['tags'] = [];
     if (!empty($item['tags_json'])) {
         foreach (explode('|||', $item['tags_json']) as $tagJson) {
@@ -299,24 +504,83 @@ function getFurnitureById(PDO $pdo, int $id): ?array
     }
     unset($item['tags_json']);
     
-    // Ensure favorite_count is an integer
     $item['favorite_count'] = (int) $item['favorite_count'];
+    
+    // Fetch categories (primary first)
+    $catStmt = $pdo->prepare('
+        SELECT c.id, c.name, c.slug, c.icon, fc.is_primary
+        FROM furniture_categories fc
+        INNER JOIN categories c ON fc.category_id = c.id
+        WHERE fc.furniture_id = ?
+        ORDER BY fc.is_primary DESC, c.sort_order ASC
+    ');
+    $catStmt->execute([$id]);
+    $item['categories'] = [];
+    while ($cat = $catStmt->fetch(PDO::FETCH_ASSOC)) {
+        $item['categories'][] = [
+            'id' => (int) $cat['id'],
+            'name' => $cat['name'],
+            'slug' => $cat['slug'],
+            'icon' => $cat['icon'],
+            'is_primary' => (bool) $cat['is_primary'],
+        ];
+    }
+    
+    // Backwards compatibility
+    if (!empty($item['categories'])) {
+        $primary = $item['categories'][0];
+        $item['category_id'] = $primary['id'];
+        $item['category_name'] = $primary['name'];
+        $item['category_slug'] = $primary['slug'];
+    }
     
     return $item;
 }
 
 /**
+ * Get multiple furniture items by IDs
+ * 
+ * Efficient batch query for recently viewed, etc.
+ * Preserves the order of IDs passed in.
+ */
+function getFurnitureByIds(PDO $pdo, array $ids): array
+{
+    if (empty($ids)) {
+        return [];
+    }
+    
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    
+    $stmt = $pdo->prepare("
+        SELECT f.id, f.name, f.price, f.image_url
+        FROM furniture f
+        WHERE f.id IN ({$placeholders})
+    ");
+    $stmt->execute($ids);
+    $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Attach categories
+    $items = attachCategoriesToFurniture($pdo, $items);
+    
+    $indexed = [];
+    foreach ($items as $item) {
+        $indexed[$item['id']] = $item;
+    }
+    
+    $result = [];
+    foreach ($ids as $id) {
+        if (isset($indexed[$id])) {
+            $result[] = $indexed[$id];
+        }
+    }
+    
+    return $result;
+}
+
+/**
  * Attach tags to furniture items
  * 
- * Optimized implementation that uses:
- * 1. Request-level caching (static variable) to prevent redundant queries
- *    when the same furniture items are loaded multiple times in a single request
- * 2. Batch querying with IN clause to fetch all uncached tags in a single query
- * 
- * This approach is more efficient than using GROUP_CONCAT because:
- * - It handles variable numbers of items efficiently
- * - The static cache prevents redundant queries across multiple function calls
- * - Simpler and more maintainable than JSON parsing approaches
+ * Uses request-level caching and batch queries for efficiency.
  * 
  * @param PDO $pdo Database connection
  * @param array $items Array of furniture items
@@ -328,14 +592,12 @@ function attachTagsToFurniture(PDO $pdo, array $items): array
         return $items;
     }
     
-    // Request-level cache for tags (static variable persists for request lifetime)
     static $tagCache = [];
     
     $ids = array_column($items, 'id');
     $idsToFetch = [];
     $tagMap = [];
     
-    // Check cache for already-loaded tags
     foreach ($ids as $id) {
         if (isset($tagCache[$id])) {
             $tagMap[$id] = $tagCache[$id];
@@ -344,7 +606,6 @@ function attachTagsToFurniture(PDO $pdo, array $items): array
         }
     }
     
-    // Fetch tags for items not in cache
     if (!empty($idsToFetch)) {
         $placeholders = implode(',', array_fill(0, count($idsToFetch), '?'));
         
@@ -356,24 +617,19 @@ function attachTagsToFurniture(PDO $pdo, array $items): array
         ");
         $stmt->execute($idsToFetch);
         
-        // Initialize cache entries for all items being fetched
         foreach ($idsToFetch as $id) {
             $tagCache[$id] = [];
             $tagMap[$id] = [];
         }
         
-        // Fetch and store tags
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $furnitureId = $row['furniture_id'];
             unset($row['furniture_id']);
-            
-            // Store in cache and tagMap
             $tagCache[$furnitureId][] = $row;
             $tagMap[$furnitureId][] = $row;
         }
     }
     
-    // Attach tags to items
     foreach ($items as &$item) {
         $item['tags'] = $tagMap[$item['id']] ?? [];
     }
@@ -383,24 +639,30 @@ function attachTagsToFurniture(PDO $pdo, array $items): array
 
 /**
  * Create furniture item
+ * 
+ * Accepts either category_ids (array) or category_id (single) for backwards compatibility.
  */
 function createFurniture(PDO $pdo, array $data): int
 {
     $stmt = $pdo->prepare('
-        INSERT INTO furniture (name, category_id, price, image_url, created_at, updated_at)
-        VALUES (?, ?, ?, ?, NOW(), NOW())
+        INSERT INTO furniture (name, price, image_url, created_at, updated_at)
+        VALUES (?, ?, ?, NOW(), NOW())
     ');
     
     $stmt->execute([
         $data['name'],
-        $data['category_id'],
         $data['price'] ?? 0,
         $data['image_url'] ?? null,
     ]);
     
     $furnitureId = (int) $pdo->lastInsertId();
     
-    // Add tags if provided
+    // Handle categories - accept array or single ID
+    $categoryIds = $data['category_ids'] ?? (isset($data['category_id']) ? [$data['category_id']] : []);
+    if (!empty($categoryIds)) {
+        syncFurnitureCategories($pdo, $furnitureId, $categoryIds);
+    }
+    
     if (!empty($data['tags'])) {
         syncFurnitureTags($pdo, $furnitureId, $data['tags']);
     }
@@ -411,14 +673,9 @@ function createFurniture(PDO $pdo, array $data): int
 /**
  * Update furniture item
  * 
- * Follows error handling pattern: throws RuntimeException for all failures (all failures
- * are considered unexpected errors, not expected business conditions).
+ * Accepts either category_ids (array) or category_id (single) for backwards compatibility.
  * 
- * @param PDO $pdo Database connection
- * @param int $id Furniture ID to update
- * @param array $data Data to update
- * @return bool True on success
- * @throws RuntimeException If database is not available, update fails, or invalid state (e.g., no data to update)
+ * @throws RuntimeException If update fails or no data provided
  */
 function updateFurniture(PDO $pdo, int $id, array $data): bool
 {
@@ -429,10 +686,6 @@ function updateFurniture(PDO $pdo, int $id, array $data): bool
         $fields[] = 'name = ?';
         $params[] = $data['name'];
     }
-    if (isset($data['category_id'])) {
-        $fields[] = 'category_id = ?';
-        $params[] = $data['category_id'];
-    }
     if (array_key_exists('price', $data)) {
         $fields[] = 'price = ?';
         $params[] = $data['price'] ?? 0;
@@ -442,21 +695,32 @@ function updateFurniture(PDO $pdo, int $id, array $data): bool
         $params[] = $data['image_url'];
     }
     
-    if (empty($fields)) {
+    // Handle categories - accept array or single ID
+    $categoryIds = $data['category_ids'] ?? (isset($data['category_id']) ? [$data['category_id']] : null);
+    $hasCategoryUpdate = $categoryIds !== null;
+    
+    if (empty($fields) && !$hasCategoryUpdate && !isset($data['tags'])) {
         throw new RuntimeException('No data provided to update');
     }
     
-    $params[] = $id;
-    $sql = 'UPDATE furniture SET ' . implode(', ', $fields) . ' WHERE id = ?';
-    
-    $stmt = $pdo->prepare($sql);
-    $result = $stmt->execute($params);
-    
-    if (!$result) {
-        throw new RuntimeException('Failed to update furniture item');
+    // Update furniture table fields if any
+    if (!empty($fields)) {
+        $params[] = $id;
+        $sql = 'UPDATE furniture SET ' . implode(', ', $fields) . ' WHERE id = ?';
+        
+        $stmt = $pdo->prepare($sql);
+        $result = $stmt->execute($params);
+        
+        if (!$result) {
+            throw new RuntimeException('Failed to update furniture item');
+        }
     }
     
-    // Update tags if provided
+    // Sync categories if provided
+    if ($hasCategoryUpdate && !empty($categoryIds)) {
+        syncFurnitureCategories($pdo, $id, $categoryIds);
+    }
+    
     if (isset($data['tags'])) {
         syncFurnitureTags($pdo, $id, $data['tags']);
     }
@@ -512,35 +776,29 @@ function updateFurnitureImage(PDO $pdo, int $id, string $imageUrl): bool
  */
 function syncFurnitureTags(PDO $pdo, int $furnitureId, array $tagIds): void
 {
-    // Normalize tag IDs to integers for comparison
     $newTagIds = array_map('intval', $tagIds);
     $newTagIds = array_unique($newTagIds);
     sort($newTagIds);
     
-    // Get current tags
     $stmt = $pdo->prepare('SELECT tag_id FROM furniture_tags WHERE furniture_id = ?');
     $stmt->execute([$furnitureId]);
     $currentTagIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
     $currentTagIds = array_map('intval', $currentTagIds);
     sort($currentTagIds);
     
-    // If tags are identical, no changes needed
     if ($newTagIds === $currentTagIds) {
         return;
     }
     
-    // Calculate differences
     $toAdd = array_diff($newTagIds, $currentTagIds);
     $toRemove = array_diff($currentTagIds, $newTagIds);
     
-    // Remove tags that are no longer needed
     if (!empty($toRemove)) {
         $placeholders = implode(',', array_fill(0, count($toRemove), '?'));
         $stmt = $pdo->prepare("DELETE FROM furniture_tags WHERE furniture_id = ? AND tag_id IN ({$placeholders})");
         $stmt->execute(array_merge([$furnitureId], $toRemove));
     }
     
-    // Add new tags (batch insert for efficiency)
     if (!empty($toAdd)) {
         $values = [];
         $params = [];
@@ -555,6 +813,126 @@ function syncFurnitureTags(PDO $pdo, int $furnitureId, array $tagIds): void
     }
 }
 
+/**
+ * Sync furniture categories
+ * 
+ * First category in array is marked as primary.
+ * Optimized to only update categories that have changed.
+ */
+function syncFurnitureCategories(PDO $pdo, int $furnitureId, array $categoryIds): void
+{
+    $newCategoryIds = array_values(array_unique(array_filter(array_map('intval', $categoryIds))));
+    
+    if (empty($newCategoryIds)) {
+        throw new RuntimeException('At least one category is required');
+    }
+    
+    $stmt = $pdo->prepare('SELECT category_id, is_primary FROM furniture_categories WHERE furniture_id = ? ORDER BY is_primary DESC');
+    $stmt->execute([$furnitureId]);
+    $current = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+    $currentCategoryIds = array_keys($current);
+    
+    $sortedNew = $newCategoryIds;
+    sort($sortedNew);
+    $sortedCurrent = $currentCategoryIds;
+    sort($sortedCurrent);
+    
+    $primaryChanged = empty($currentCategoryIds) || $newCategoryIds[0] !== array_search(1, $current, true);
+    
+    if ($sortedNew === $sortedCurrent && !$primaryChanged) {
+        return;
+    }
+    
+    $toAdd = array_diff($newCategoryIds, $currentCategoryIds);
+    $toRemove = array_diff($currentCategoryIds, $newCategoryIds);
+    
+    if (!empty($toRemove)) {
+        $placeholders = implode(',', array_fill(0, count($toRemove), '?'));
+        $stmt = $pdo->prepare("DELETE FROM furniture_categories WHERE furniture_id = ? AND category_id IN ({$placeholders})");
+        $stmt->execute(array_merge([$furnitureId], $toRemove));
+    }
+    
+    if (!empty($toAdd)) {
+        $values = [];
+        $params = [];
+        foreach ($toAdd as $categoryId) {
+            $isPrimary = ($categoryId === $newCategoryIds[0]) ? 1 : 0;
+            $values[] = '(?, ?, ?)';
+            $params[] = $furnitureId;
+            $params[] = $categoryId;
+            $params[] = $isPrimary;
+        }
+        $sql = 'INSERT INTO furniture_categories (furniture_id, category_id, is_primary) VALUES ' . implode(', ', $values);
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+    }
+    
+    // Update primary flag if changed
+    if ($primaryChanged && !in_array($newCategoryIds[0], $toAdd)) {
+        $pdo->prepare('UPDATE furniture_categories SET is_primary = 0 WHERE furniture_id = ?')->execute([$furnitureId]);
+        $pdo->prepare('UPDATE furniture_categories SET is_primary = 1 WHERE furniture_id = ? AND category_id = ?')
+            ->execute([$furnitureId, $newCategoryIds[0]]);
+    }
+    
+    // Invalidate categories cache (item counts changed)
+    if (function_exists('apcu_delete')) {
+        apcu_delete('gtaw_categories_v1'); // Legacy
+        apcu_delete('gtaw_categories_v2'); // Current
+    }
+}
+
+/**
+ * Attach categories to furniture items
+ * 
+ * Efficiently loads categories for multiple furniture items in a single query.
+ */
+function attachCategoriesToFurniture(PDO $pdo, array $items): array
+{
+    if (empty($items)) {
+        return [];
+    }
+    
+    $ids = array_column($items, 'id');
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    
+    $stmt = $pdo->prepare("
+        SELECT fc.furniture_id, c.id, c.name, c.slug, c.icon, fc.is_primary
+        FROM furniture_categories fc
+        INNER JOIN categories c ON fc.category_id = c.id
+        WHERE fc.furniture_id IN ({$placeholders})
+        ORDER BY fc.is_primary DESC, c.sort_order ASC
+    ");
+    $stmt->execute($ids);
+    
+    $categoryMap = [];
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $fid = (int) $row['furniture_id'];
+        if (!isset($categoryMap[$fid])) {
+            $categoryMap[$fid] = [];
+        }
+        $categoryMap[$fid][] = [
+            'id' => (int) $row['id'],
+            'name' => $row['name'],
+            'slug' => $row['slug'],
+            'icon' => $row['icon'],
+            'is_primary' => (bool) $row['is_primary'],
+        ];
+    }
+    
+    foreach ($items as &$item) {
+        $item['categories'] = $categoryMap[$item['id']] ?? [];
+        // Backwards compatibility: set primary category fields
+        if (!empty($item['categories'])) {
+            $primary = $item['categories'][0];
+            $item['category_id'] = $primary['id'];
+            $item['category_name'] = $primary['name'];
+            $item['category_slug'] = $primary['slug'];
+        }
+    }
+    
+    return $items;
+}
+
 // ============================================
 // CATEGORY FUNCTIONS
 // ============================================
@@ -564,16 +942,33 @@ function syncFurnitureTags(PDO $pdo, int $furnitureId, array $tagIds): void
  */
 function getCategories(PDO $pdo): array
 {
+    // APCu cache (if available) to avoid repeated lookups
+    // Updated to v2 to force cache invalidation after multi-category implementation
+    $cacheKey = 'gtaw_categories_v2';
+    if (function_exists('apcu_fetch')) {
+        $cached = apcu_fetch($cacheKey, $success);
+        if ($success && is_array($cached)) {
+            return $cached;
+        }
+    }
+
+    // Count all furniture items per category (regardless of primary/secondary status)
     $stmt = $pdo->query('
         SELECT c.id, c.name, c.slug, c.icon, c.sort_order,
-               COUNT(f.id) as item_count
+               COALESCE(COUNT(DISTINCT fc.furniture_id), 0) as item_count
         FROM categories c
-        LEFT JOIN furniture f ON c.id = f.category_id
-        GROUP BY c.id
+        LEFT JOIN furniture_categories fc ON c.id = fc.category_id
+        GROUP BY c.id, c.name, c.slug, c.icon, c.sort_order
         ORDER BY c.sort_order ASC, c.name ASC
     ');
     
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (function_exists('apcu_store')) {
+        apcu_store($cacheKey, $categories, CACHE_TTL_CATEGORIES);
+    }
+
+    return $categories;
 }
 
 /**
@@ -632,13 +1027,27 @@ function deleteCategory(PDO $pdo, int $id): bool
  */
 function getTagGroups(PDO $pdo): array
 {
+    $cacheKey = 'gtaw_tag_groups_v1';
+    if (function_exists('apcu_fetch')) {
+        $cached = apcu_fetch($cacheKey, $success);
+        if ($success && is_array($cached)) {
+            return $cached;
+        }
+    }
+
     $stmt = $pdo->query('
         SELECT id, name, slug, color, sort_order
         FROM tag_groups
         ORDER BY sort_order ASC, name ASC
     ');
     
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $groups = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (function_exists('apcu_store')) {
+        apcu_store($cacheKey, $groups, CACHE_TTL_TAG_GROUPS);
+    }
+
+    return $groups;
 }
 
 /**
@@ -687,6 +1096,14 @@ function deleteTagGroup(PDO $pdo, int $id): bool
  */
 function getTags(PDO $pdo): array
 {
+    $cacheKey = 'gtaw_tags_flat_v1';
+    if (function_exists('apcu_fetch')) {
+        $cached = apcu_fetch($cacheKey, $success);
+        if ($success && is_array($cached)) {
+            return $cached;
+        }
+    }
+
     $stmt = $pdo->query('
         SELECT t.id, t.name, t.slug, t.color, t.group_id,
                tg.name as group_name, tg.slug as group_slug, tg.color as group_color,
@@ -698,7 +1115,13 @@ function getTags(PDO $pdo): array
         ORDER BY tg.sort_order ASC, t.name ASC
     ');
     
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $tags = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (function_exists('apcu_store')) {
+        apcu_store($cacheKey, $tags, CACHE_TTL_TAGS);
+    }
+
+    return $tags;
 }
 
 /**
@@ -707,10 +1130,16 @@ function getTags(PDO $pdo): array
  */
 function getTagsGrouped(PDO $pdo): array
 {
-    // Get all groups
+    $cacheKey = 'gtaw_tags_grouped_v1';
+    if (function_exists('apcu_fetch')) {
+        $cached = apcu_fetch($cacheKey, $success);
+        if ($success && is_array($cached)) {
+            return $cached;
+        }
+    }
+
     $groups = getTagGroups($pdo);
     
-    // Get all tags with usage count
     $stmt = $pdo->query('
         SELECT t.id, t.name, t.slug, t.color, t.group_id,
                COUNT(ft.furniture_id) as usage_count
@@ -721,7 +1150,6 @@ function getTagsGrouped(PDO $pdo): array
     ');
     $allTags = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // Organize tags by group
     $groupedTags = [];
     $ungrouped = [];
     
@@ -736,15 +1164,20 @@ function getTagsGrouped(PDO $pdo): array
         }
     }
     
-    // Attach tags to groups
     foreach ($groups as &$group) {
         $group['tags'] = $groupedTags[$group['id']] ?? [];
     }
-    
-    return [
+
+    $result = [
         'groups' => $groups,
         'ungrouped' => $ungrouped,
     ];
+
+    if (function_exists('apcu_store')) {
+        apcu_store($cacheKey, $result, CACHE_TTL_TAGS);
+    }
+    
+    return $result;
 }
 
 /**
@@ -815,18 +1248,17 @@ function deleteTag(PDO $pdo, int $id): bool
 function getUserFavorites(PDO $pdo, int $userId): array
 {
     $stmt = $pdo->prepare('
-        SELECT f.id, f.name, f.category_id, f.price, f.image_url,
-               c.name as category_name, c.slug as category_slug,
+        SELECT f.id, f.name, f.price, f.image_url,
                fav.created_at as favorited_at
         FROM favorites fav
         INNER JOIN furniture f ON fav.furniture_id = f.id
-        INNER JOIN categories c ON f.category_id = c.id
         WHERE fav.user_id = ?
         ORDER BY fav.created_at DESC
     ');
     $stmt->execute([$userId]);
     $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
+    $items = attachCategoriesToFurniture($pdo, $items);
     return attachTagsToFurniture($pdo, $items);
 }
 
@@ -892,7 +1324,6 @@ function removeFavorite(PDO $pdo, int $userId, int $furnitureId): bool
     $stmt = $pdo->prepare('DELETE FROM favorites WHERE user_id = ? AND furniture_id = ?');
     $result = $stmt->execute([$userId, $furnitureId]);
     
-    // Return true if row was deleted, false if not found (expected condition)
     return $result && $stmt->rowCount() > 0;
 }
 
@@ -941,10 +1372,8 @@ function getUsers(PDO $pdo, int $page = 1, int $perPage = 50): array
     $stmt->execute([$perPage, $offset]);
     $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // Extract total from first row (same for all rows due to window function)
     $total = !empty($items) ? (int) ($items[0]['total'] ?? 0) : 0;
     
-    // Remove 'total' from items array to maintain clean data structure
     foreach ($items as &$item) {
         unset($item['total']);
     }
@@ -1019,13 +1448,9 @@ function createAdmin(PDO $pdo, string $username, string $password): int
 
 /**
  * Get dashboard statistics
- * 
- * Optimized to use 2 queries instead of 6 by combining COUNT queries
- * into a single query with subqueries.
  */
 function getDashboardStats(PDO $pdo): array
 {
-    // Get all counts in a single query using subqueries
     $stmt = $pdo->query('
         SELECT 
             (SELECT COUNT(*) FROM furniture) as total_furniture,
@@ -1036,7 +1461,6 @@ function getDashboardStats(PDO $pdo): array
     ');
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     
-    // Get recent users separately (needs ORDER BY, can't be combined with counts)
     $stmt = $pdo->query('
         SELECT id, username, main_character, last_login 
         FROM users 
@@ -1052,6 +1476,59 @@ function getDashboardStats(PDO $pdo): array
         'total_favorites' => (int) $row['total_favorites'],
         'recent_users' => $stmt->fetchAll(PDO::FETCH_ASSOC),
     ];
+}
+
+/**
+ * Get most popular furniture items by favorite count
+ * 
+ * @param PDO $pdo Database connection
+ * @param int $limit Maximum items to return
+ * @return array Popular furniture items with favorite counts
+ */
+function getPopularFurniture(PDO $pdo, int $limit = 10): array
+{
+    $stmt = $pdo->prepare('
+        SELECT 
+            f.id, 
+            f.name, 
+            f.price, 
+            f.image_url,
+            COUNT(fav.id) as favorite_count
+        FROM furniture f
+        LEFT JOIN favorites fav ON f.id = fav.furniture_id
+        GROUP BY f.id
+        HAVING favorite_count > 0
+        ORDER BY favorite_count DESC, f.name ASC
+        LIMIT ?
+    ');
+    $stmt->execute([$limit]);
+    $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    return attachCategoriesToFurniture($pdo, $items);
+}
+
+/**
+ * Get category popularity statistics
+ * 
+ * @param PDO $pdo Database connection
+ * @return array Categories with item counts and favorite counts
+ */
+function getCategoryStats(PDO $pdo): array
+{
+    $stmt = $pdo->query('
+        SELECT 
+            c.id,
+            c.name,
+            c.icon,
+            COUNT(DISTINCT fc.furniture_id) as item_count,
+            COUNT(fav.id) as favorite_count
+        FROM categories c
+        LEFT JOIN furniture_categories fc ON c.id = fc.category_id
+        LEFT JOIN favorites fav ON fc.furniture_id = fav.furniture_id
+        GROUP BY c.id
+        ORDER BY favorite_count DESC
+    ');
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
 // ============================================
@@ -1075,6 +1552,212 @@ function createPagination(int $total, int $page, int $perPage): array
     ];
 }
 
+// ============================================
+// VIEW HELPERS
+// ============================================
+
+/**
+ * Render pagination HTML
+ * 
+ * Uses data from existing createPagination() function.
+ * 
+ * @param array $pagination Pagination data from createPagination()
+ * @param string $baseUrl Base URL without page parameter
+ * @param string $pageParam Parameter name (default: 'p' to avoid collision with dashboard 'page')
+ * @return string HTML
+ */
+function renderPaginationHtml(array $pagination, string $baseUrl, string $pageParam = 'p'): string
+{
+    $page = $pagination['page'];
+    $totalPages = $pagination['total_pages'];
+    $total = $pagination['total'];
+    
+    if ($totalPages <= 1) {
+        if ($total > 0) {
+            return '<div class="pagination"><span class="page-info">' . 
+                   $total . ' item' . ($total === 1 ? '' : 's') . 
+                   '</span></div>';
+        }
+        return '';
+    }
+    
+    $urlParts = parse_url($baseUrl);
+    $existingParams = [];
+    if (isset($urlParts['query'])) {
+        parse_str($urlParts['query'], $existingParams);
+    }
+    
+    $basePath = $urlParts['path'] ?? '';
+    
+    $prevParams = $existingParams;
+    $prevParams[$pageParam] = $page - 1;
+    $prevUrl = $page > 1 ? $basePath . '?' . http_build_query($prevParams) : '#';
+    
+    $nextParams = $existingParams;
+    $nextParams[$pageParam] = $page + 1;
+    $nextUrl = $page < $totalPages ? $basePath . '?' . http_build_query($nextParams) : '#';
+    
+    $prevDisabled = $page <= 1 ? 'disabled' : '';
+    $nextDisabled = $page >= $totalPages ? 'disabled' : '';
+    
+    return <<<HTML
+    <div class="pagination">
+        <a href="{$prevUrl}" class="btn btn-sm {$prevDisabled}">← Previous</a>
+        <span class="page-info">Page {$page} of {$totalPages} ({$total} items)</span>
+        <a href="{$nextUrl}" class="btn btn-sm {$nextDisabled}">Next →</a>
+    </div>
+    HTML;
+}
+
+/**
+ * Render empty state
+ * 
+ * @param string $icon Emoji icon
+ * @param string $title Main message
+ * @param string $message Secondary message
+ * @param string|null $actionUrl Action button URL
+ * @param string|null $actionText Action button text
+ * @return string HTML
+ */
+function renderEmptyState(
+    string $icon, 
+    string $title, 
+    string $message, 
+    ?string $actionUrl = null, 
+    ?string $actionText = null
+): string {
+    $action = '';
+    if ($actionUrl && $actionText) {
+        $action = '<a href="' . e($actionUrl) . '" class="btn btn-primary">' . e($actionText) . '</a>';
+    }
+    
+    return <<<HTML
+    <div class="empty-state">
+        <div class="empty-state-icon">{$icon}</div>
+        <h3>{$title}</h3>
+        <p>{$message}</p>
+        {$action}
+    </div>
+    HTML;
+}
+
+/**
+ * Render a furniture card HTML
+ * 
+ * Reusable function for server-side rendering of furniture cards.
+ * Used in collection.php and other server-rendered pages.
+ * 
+ * NOTE: A JavaScript equivalent exists in js/app.js (renderCard() method) for
+ * client-side rendering. Both functions should maintain consistent HTML structure
+ * and class names. The duplication is necessary for server/client separation.
+ * 
+ * @param array $item Furniture item data (must include: id, name, category_name, price, image_url, tags)
+ * @param bool $isFavorited Whether the item is favorited by current user
+ * @param bool $showFavoriteButton Whether to show the favorite button (default: true)
+ * @param int $maxVisibleTags Maximum number of tags to show before showing "+X more" (default: 3)
+ * @return string HTML for the furniture card
+ */
+function renderFurnitureCard(array $item, bool $isFavorited = false, bool $showFavoriteButton = true, int $maxVisibleTags = 3): string
+{
+    $id = (int) ($item['id'] ?? 0);
+    $name = e($item['name'] ?? '');
+    $price = (int) ($item['price'] ?? 0);
+    $imageUrl = e($item['image_url'] ?? '/images/placeholder.svg');
+    $tags = $item['tags'] ?? [];
+    $categories = $item['categories'] ?? [];
+    
+    // Build category display (primary + overflow)
+    $categoryHtml = '';
+    if (!empty($categories)) {
+        $primaryCat = e($categories[0]['name'] ?? '');
+        $categoryHtml = "<span class=\"category\">{$primaryCat}</span>";
+        if (count($categories) > 1) {
+            $extraCats = count($categories) - 1;
+            $allCatNames = implode(', ', array_column($categories, 'name'));
+            $categoryHtml .= "<span class=\"category-more\" title=\"" . e($allCatNames) . "\">+{$extraCats}</span>";
+        }
+    } else {
+        // Fallback for backwards compatibility
+        $categoryName = e($item['category_name'] ?? '');
+        $categoryHtml = "<span class=\"category\">{$categoryName}</span>";
+    }
+    
+    // Prepare tags
+    $visibleTags = array_slice($tags, 0, $maxVisibleTags);
+    $extraCount = count($tags) - $maxVisibleTags;
+    
+    $tagsHtml = '';
+    foreach ($visibleTags as $tag) {
+        $tagColor = e($tag['color'] ?? '#6b7280');
+        $tagName = e($tag['name'] ?? '');
+        $tagsHtml .= "<span class=\"tag\" style=\"--tag-color: {$tagColor}\">{$tagName}</span>";
+    }
+    if ($extraCount > 0) {
+        $tagsHtml .= "<span class=\"tag-more\">+{$extraCount}</span>";
+    }
+    
+    $formattedPrice = number_format($price, 0, '.', ',');
+    
+    $favoriteButton = '';
+    if ($showFavoriteButton) {
+        $favoriteClass = $isFavorited ? 'active' : '';
+        $favoriteIcon = $isFavorited ? '❤️' : '🤍';
+        $favoriteTitle = $isFavorited ? 'Remove from favorites' : 'Add to favorites';
+        $favoriteButton = <<<HTML
+        <button 
+            class="btn-favorite {$favoriteClass}" 
+            data-id="{$id}"
+            title="{$favoriteTitle}"
+            aria-label="{$favoriteTitle}"
+        >
+            {$favoriteIcon}
+        </button>
+        HTML;
+    }
+    
+    // Data attributes use primary category for backwards compatibility
+    $dataCategoryName = e($item['category_name'] ?? ($categories[0]['name'] ?? ''));
+    
+    return <<<HTML
+    <article class="furniture-card" 
+             data-id="{$id}"
+             data-name="{$name}"
+             data-category="{$dataCategoryName}"
+             data-price="{$price}"
+             data-image="{$imageUrl}"
+             tabindex="0">
+        <div class="card-image" data-action="lightbox">
+            <img 
+                src="{$imageUrl}" 
+                alt="{$name}"
+                loading="lazy"
+                onerror="this.src='/images/placeholder.svg'"
+            >
+        </div>
+        <div class="card-body">
+            <h3 title="{$name}">{$name}</h3>
+            <p class="meta">
+                {$categoryHtml}
+                <span class="separator">•</span>
+                <span class="price">\${$formattedPrice}</span>
+            </p>
+            <div class="tags">{$tagsHtml}</div>
+            <div class="actions">
+                <button 
+                    class="btn-copy" 
+                    data-name="{$name}"
+                    title="Copy /sf command"
+                >
+                    <span class="btn-icon">📋</span>
+                    <span class="btn-text">Copy</span>
+                </button>
+                {$favoriteButton}
+            </div>
+        </div>
+    </article>
+    HTML;
+}
+
 /**
  * Validate furniture input
  * 
@@ -1095,20 +1778,22 @@ function parseCsvImport(PDO $pdo, string $csvContent): array
     $items = [];
     $errors = [];
     
-    // Parse header
     $header = str_getcsv(array_shift($lines));
     $header = array_map('strtolower', array_map('trim', $header));
     
     $nameIndex = array_search('name', $header);
     $categoryIndex = array_search('category_slug', $header);
+    $categoriesIndex = array_search('category_slugs', $header); // Multi-category support
     $priceIndex = array_search('price', $header);
     $tagsIndex = array_search('tags', $header);
     $imageIndex = array_search('image_url', $header);
     
-    if ($nameIndex === false || $categoryIndex === false) {
+    // Require name and at least one category column
+    $hasCategoryColumn = $categoryIndex !== false || $categoriesIndex !== false;
+    if ($nameIndex === false || !$hasCategoryColumn) {
         return [
             'items' => [],
-            'errors' => ['CSV must have "name" and "category_slug" columns'],
+            'errors' => ['CSV must have "name" and "category_slug" (or "category_slugs") columns'],
         ];
     }
     
@@ -1122,28 +1807,47 @@ function parseCsvImport(PDO $pdo, string $csvContent): array
         $rowNum = $lineNum + 2; // Account for header and 1-based numbering
         
         $name = trim($row[$nameIndex] ?? '');
-        $categorySlug = trim($row[$categoryIndex] ?? '');
         
         if (empty($name)) {
             $errors[] = "Row {$rowNum}: Name is required";
             continue;
         }
         
-        $category = getCategoryBySlug($pdo, $categorySlug);
-        if (!$category) {
-            $errors[] = "Row {$rowNum}: Category '{$categorySlug}' not found";
+        // Parse categories (support both single and multi-category columns)
+        $categorySlugs = [];
+        if ($categoriesIndex !== false && !empty($row[$categoriesIndex])) {
+            $categorySlugs = array_map('trim', explode('|', $row[$categoriesIndex]));
+        } elseif ($categoryIndex !== false && !empty($row[$categoryIndex])) {
+            $categorySlugs = [trim($row[$categoryIndex])];
+        }
+        
+        if (empty($categorySlugs)) {
+            $errors[] = "Row {$rowNum}: At least one category is required";
+            continue;
+        }
+        
+        $categoryIds = [];
+        foreach ($categorySlugs as $slug) {
+            $category = getCategoryBySlug($pdo, $slug);
+            if ($category) {
+                $categoryIds[] = $category['id'];
+            } else {
+                $errors[] = "Row {$rowNum}: Category '{$slug}' not found";
+            }
+        }
+        
+        if (empty($categoryIds)) {
             continue;
         }
         
         $item = [
             'name' => $name,
-            'category_id' => $category['id'],
+            'category_ids' => $categoryIds,
             'price' => $priceIndex !== false ? (int) ($row[$priceIndex] ?? 0) : 0,
             'image_url' => $imageIndex !== false ? trim($row[$imageIndex] ?? '') : null,
             'tags' => [],
         ];
         
-        // Parse tags
         if ($tagsIndex !== false && !empty($row[$tagsIndex])) {
             $tagNames = array_map('trim', explode(',', $row[$tagsIndex]));
             foreach ($tagNames as $tagName) {
@@ -1165,34 +1869,45 @@ function parseCsvImport(PDO $pdo, string $csvContent): array
 /**
  * Export furniture as CSV
  * 
- * Optimized to use a single query with GROUP_CONCAT to avoid N+1 query pattern.
+ * Exports categories as pipe-separated slugs in category_slugs column.
  */
 function exportFurnitureCsv(PDO $pdo): string
 {
     $output = fopen('php://temp', 'r+');
     
-    // Header
-    fputcsv($output, ['name', 'category_slug', 'price', 'tags', 'image_url'], ',', '"', '');
+    fputcsv($output, ['name', 'category_slugs', 'price', 'tags', 'image_url'], ',', '"', '');
     
-    // Fetch all furniture with tags in a single query using GROUP_CONCAT
+    // First get all furniture with tags
     $stmt = $pdo->query('
-        SELECT f.id, f.name, f.price, f.image_url, c.slug as category_slug,
-               GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ",") as tags
+        SELECT f.id, f.name, f.price, f.image_url,
+               GROUP_CONCAT(DISTINCT t.name ORDER BY t.name SEPARATOR ",") as tags
         FROM furniture f
-        INNER JOIN categories c ON f.category_id = c.id
         LEFT JOIN furniture_tags ft ON f.id = ft.furniture_id
         LEFT JOIN tags t ON ft.tag_id = t.id
-        GROUP BY f.id, f.name, f.price, f.image_url, c.slug
+        GROUP BY f.id, f.name, f.price, f.image_url
         ORDER BY f.name
     ');
+    $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        // GROUP_CONCAT returns NULL if no tags, convert to empty string
+    // Get categories for all furniture
+    $catStmt = $pdo->query('
+        SELECT fc.furniture_id, c.slug
+        FROM furniture_categories fc
+        INNER JOIN categories c ON fc.category_id = c.id
+        ORDER BY fc.is_primary DESC, c.sort_order ASC
+    ');
+    $categoryMap = [];
+    while ($cat = $catStmt->fetch(PDO::FETCH_ASSOC)) {
+        $categoryMap[$cat['furniture_id']][] = $cat['slug'];
+    }
+    
+    foreach ($items as $row) {
         $tags = $row['tags'] ?? '';
+        $categorySlugs = implode('|', $categoryMap[$row['id']] ?? []);
         
         fputcsv($output, [
             $row['name'],
-            $row['category_slug'],
+            $categorySlugs,
             $row['price'],
             $tags,
             $row['image_url'] ?? '',
