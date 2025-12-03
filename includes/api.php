@@ -25,6 +25,13 @@ const ERROR_NOT_FOUND = 'Resource not found';
 const ERROR_INVALID_ID = 'Invalid ID';
 const ERROR_AUTH_REQUIRED = 'Authentication required';
 const ERROR_LOGIN_REQUIRED = 'Login required';
+const ERROR_METHOD_NOT_ALLOWED = 'Method not allowed';
+const ERROR_CSRF_INVALID = 'Invalid or missing CSRF token';
+const ERROR_DB_CONNECTION = 'Database connection failed';
+const ERROR_DB_ERROR = 'Database error';
+const ERROR_INTERNAL = 'Internal server error';
+const ERROR_ADMIN_REQUIRED = 'Admin authentication required';
+const ERROR_UNKNOWN_ENDPOINT = 'Unknown endpoint';
 
 /**
  * Send success response
@@ -32,13 +39,15 @@ const ERROR_LOGIN_REQUIRED = 'Login required';
  * @param mixed $data Optional data to include in response
  * @param string|null $message Optional success message
  * @param array|null $pagination Optional pagination metadata
+ * @param array|null $extra Optional extra fields to merge into response
+ * @param bool $cacheable Whether this response can be cached (default: false for dynamic data)
+ * @param int $cacheMaxAge Cache max age in seconds (default: 300 for cacheable responses)
  * @return never
  */
-function jsonSuccess(mixed $data = null, ?string $message = null, ?array $pagination = null): never
+function jsonSuccess(mixed $data = null, ?string $message = null, ?array $pagination = null, ?array $extra = null, bool $cacheable = false, int $cacheMaxAge = 300): never
 {
     $response = ['success' => true];
     
-    // Always include data if provided (even if empty array)
     if ($data !== null) {
         $response['data'] = $data;
     }
@@ -47,9 +56,29 @@ function jsonSuccess(mixed $data = null, ?string $message = null, ?array $pagina
         $response['message'] = $message;
     }
     
-    // Always include pagination if provided
     if ($pagination !== null) {
         $response['pagination'] = $pagination;
+    }
+    
+    if ($extra !== null) {
+        $response = array_merge($response, $extra);
+    }
+    
+    if ($cacheable) {
+        $etag = md5(json_encode($response));
+        header("ETag: \"{$etag}\"");
+        
+        $ifNoneMatch = $_SERVER['HTTP_IF_NONE_MATCH'] ?? '';
+        if ($ifNoneMatch === "\"{$etag}\"") {
+            http_response_code(304);
+            exit;
+        }
+        
+        header("Cache-Control: public, max-age={$cacheMaxAge}");
+    } else {
+        header('Cache-Control: no-cache, no-store, must-revalidate');
+        header('Pragma: no-cache');
+        header('Expires: 0');
     }
     
     echo json_encode($response);
@@ -103,7 +132,7 @@ function requireFurniture(PDO $pdo, int $id): array
 function requireMethod(string $allowedMethod): void
 {
     if (requestMethod() !== strtoupper($allowedMethod)) {
-        jsonError('Method not allowed', 405);
+        jsonError(ERROR_METHOD_NOT_ALLOWED, 405);
     }
 }
 
@@ -120,7 +149,7 @@ function requireMethods(array $allowedMethods): void
     $allowedMethods = array_map('strtoupper', $allowedMethods);
     
     if (!in_array($method, $allowedMethods, true)) {
-        jsonError('Method not allowed', 405);
+        jsonError(ERROR_METHOD_NOT_ALLOWED, 405);
     }
 }
 
