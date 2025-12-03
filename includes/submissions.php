@@ -32,7 +32,9 @@ const SUBMISSION_STATUS_REJECTED = 'rejected';
 // ============================================
 
 /**
- * Get submissions with pagination and filters
+ * Get submissions with pagination and filters.
+ *
+ * Optionally filters by a free-text search term (admin-side search).
  */
 function getSubmissions(
     PDO $pdo,
@@ -40,7 +42,8 @@ function getSubmissions(
     int $perPage = 20,
     ?string $status = null,
     ?string $type = null,
-    ?int $userId = null
+    ?int $userId = null,
+    ?string $search = null
 ): array {
     $perPage = min(max(1, $perPage), MAX_ITEMS_PER_PAGE);
     $page = max(1, $page);
@@ -62,6 +65,16 @@ function getSubmissions(
     if ($userId !== null) {
         $where[] = 's.user_id = ?';
         $params[] = $userId;
+    }
+
+    // Optional text search across id, submitter username, furniture name and submitted name
+    if ($search !== null && $search !== '') {
+        $like = '%' . $search . '%';
+        $where[] = '(u.username LIKE ? OR f.name LIKE ? OR JSON_UNQUOTE(JSON_EXTRACT(s.data, \'$.name\')) LIKE ? OR s.id = ?)';
+        $params[] = $like;
+        $params[] = $like;
+        $params[] = $like;
+        $params[] = (int) $search;
     }
     
     $whereClause = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';
