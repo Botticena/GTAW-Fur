@@ -10,6 +10,9 @@
  * - URL state persistence
  */
 
+// Application constants
+const DEBOUNCE_DELAY_SEARCH = 300; // Milliseconds to wait before triggering search
+
 const App = {
     // Application state
     state: {
@@ -29,7 +32,7 @@ const App = {
         currentFurnitureForCollection: null,
         pagination: {
             page: 1,
-            per_page: 24,
+            per_page: 50,
             total: 0,
             total_pages: 0
         },
@@ -38,7 +41,8 @@ const App = {
         searching: false,
         lightbox: {
             isOpen: false,
-            currentIndex: -1
+            currentIndex: -1,
+            isNavigating: false
         }
     },
 
@@ -47,6 +51,12 @@ const App = {
     cacheConfig: {
         categories: { key: 'gtaw_categories_v2', ttl: 5 * 60 * 1000 }, // 5 minutes
         tags: { key: 'gtaw_tags_grouped_v2', ttl: 5 * 60 * 1000 }     // Changed from flat to grouped
+    },
+
+    // Recently viewed settings
+    recentlyViewed: {
+        key: 'gtaw_recently_viewed',
+        maxItems: 15
     },
 
     // DOM element cache
@@ -62,17 +72,14 @@ const App = {
         this.bindLightboxEvents();
         this.showSkeletonLoading();
 
-        // Parse URL parameters first (before loading data)
         this.parseUrlParams();
 
-        // Load initial data in parallel
         await Promise.all([
             this.loadCategories(),
             this.loadTags(),
             this.checkAuth()
         ]);
 
-        // Load furniture with current filters
         await this.loadFurniture();
     },
 
@@ -81,20 +88,22 @@ const App = {
      */
     initTheme() {
         const saved = localStorage.getItem('gtaw_theme');
+        if (saved) {
+            document.documentElement.setAttribute('data-theme', saved);
+            return;
+        }
+        // Use system preference, default to dark if no preference detected
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const theme = saved || (prefersDark ? 'dark' : 'dark'); // Default to dark
+        const theme = prefersDark ? 'dark' : 'light';
         document.documentElement.setAttribute('data-theme', theme);
     },
 
     /**
      * Toggle between light and dark themes
+     * Delegates to shared GTAW.toggleTheme() for consistent behavior
      */
     toggleTheme() {
-        const current = document.documentElement.getAttribute('data-theme');
-        const next = current === 'dark' ? 'light' : 'dark';
-        document.documentElement.setAttribute('data-theme', next);
-        localStorage.setItem('gtaw_theme', next);
-        this.toast(`Switched to ${next} mode`, 'info');
+        window.GTAW.toggleTheme();
     },
 
     /**
@@ -149,6 +158,7 @@ const App = {
             lightboxImage: document.getElementById('lightbox-image'),
             lightboxTitle: document.getElementById('lightbox-title'),
             lightboxMeta: document.getElementById('lightbox-meta'),
+            lightboxTags: document.getElementById('lightbox-tags'),
             lightboxCopy: document.getElementById('lightbox-copy'),
             lightboxFavorite: document.getElementById('lightbox-favorite'),
             lightboxEdit: document.getElementById('lightbox-edit'),
@@ -179,7 +189,7 @@ const App = {
                 this.state.pagination.page = 1;
                 this.loadFurniture();
                 this.updateUrl();
-            }, 300);
+            }, DEBOUNCE_DELAY_SEARCH);
         });
 
         // Theme toggle
@@ -214,8 +224,6 @@ const App = {
             this.loadFurniture();
             this.updateUrl();
         });
-
-        // Clear all filters button
         this.elements.clearFiltersBtn?.addEventListener('click', () => {
             this.clearAllFilters();
         });
@@ -432,7 +440,6 @@ const App = {
         const currentIndex = cards.indexOf(currentCard);
         if (currentIndex === -1) return;
 
-        // Calculate grid columns
         const gridStyle = window.getComputedStyle(this.elements.grid);
         const columns = gridStyle.gridTemplateColumns.split(' ').length;
 
@@ -461,11 +468,10 @@ const App = {
     },
 
     /**
-     * Get CSRF token from meta tag
+     * Get CSRF token from shared helper
      */
     getCsrfToken() {
-        const meta = document.querySelector('meta[name="csrf-token"]');
-        return meta ? meta.content : null;
+        return window.GTAW ? window.GTAW.getCsrfToken() : null;
     },
 
     /**
@@ -557,7 +563,6 @@ const App = {
         try {
             const { key, ttl } = this.cacheConfig.categories;
             
-            // Try cache first
             const cached = this.getCached(key);
             if (cached) {
                 this.state.categories = cached;
@@ -582,7 +587,6 @@ const App = {
         try {
             const { key, ttl } = this.cacheConfig.tags;
             
-            // Try cache first (validate it's the new grouped format)
             const cached = this.getCached(key);
             if (cached && (Array.isArray(cached.groups) || Array.isArray(cached.ungrouped))) {
                 this.state.tagGroups = cached;
@@ -653,7 +657,6 @@ const App = {
     async loadFurniture() {
         this.setLoading(true);
         
-        // Add loading class to grid for transition effect
         this.elements.grid?.classList.add('loading');
 
         try {
@@ -675,10 +678,10 @@ const App = {
                 params.favorites_only = '1';
             }
 
-            const { data, pagination } = await this.api(action, { params });
+            const result = await this.api(action, { params });
 
-            this.state.furniture = data;
-            this.state.pagination = { ...this.state.pagination, ...pagination };
+            this.state.furniture = result.data;
+            this.state.pagination = { ...this.state.pagination, ...result.pagination };
 
             this.render();
         } catch (error) {
@@ -686,7 +689,6 @@ const App = {
             this.toast('Failed to load furniture', 'error');
         } finally {
             this.setLoading(false);
-            // Remove loading class after a brief delay for smooth transition
             setTimeout(() => {
                 this.elements.grid?.classList.remove('loading');
             }, 50);
@@ -695,25 +697,10 @@ const App = {
 
     /**
      * Copy /sf command to clipboard
+     * Delegates to shared GTAW.copyCommand() for consistent behavior
      */
-    async copyCommand(name) {
-        const command = `/sf ${name}`;
-
-        try {
-            await navigator.clipboard.writeText(command);
-            this.toast(`Copied: ${command}`, 'success');
-        } catch (error) {
-            // Fallback for older browsers
-            const textarea = document.createElement('textarea');
-            textarea.value = command;
-            textarea.style.position = 'fixed';
-            textarea.style.opacity = '0';
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textarea);
-            this.toast(`Copied: ${command}`, 'success');
-        }
+    copyCommand(name) {
+        window.GTAW.copyCommand(name);
     },
 
     /**
@@ -758,7 +745,6 @@ const App = {
      * Update a single favorite button without re-rendering
      */
     updateFavoriteButton(furnitureId) {
-        // Update card button
         const btn = this.elements.grid?.querySelector(`.btn-favorite[data-id="${furnitureId}"]`);
         if (btn) {
             const isFav = this.state.favorites.has(furnitureId);
@@ -767,7 +753,6 @@ const App = {
             btn.setAttribute('title', isFav ? 'Remove from favorites' : 'Add to favorites');
         }
         
-        // Also update lightbox button if open and showing this item
         if (this.state.lightbox.isOpen) {
             const currentItem = this.state.furniture[this.state.lightbox.currentIndex];
             if (currentItem && currentItem.id === furnitureId) {
@@ -783,20 +768,46 @@ const App = {
     /**
      * Open lightbox for a furniture item
      */
-    openLightbox(furnitureId) {
-        const index = this.state.furniture.findIndex(f => f.id === furnitureId);
-        if (index === -1) return;
+    async openLightbox(furnitureId) {
+        let index = this.state.furniture.findIndex(f => f.id === furnitureId);
+        
+        // If furniture not found, try to fetch it
+        if (index === -1) {
+            try {
+                const result = await this.api('furniture/single', { params: { id: furnitureId } });
+                if (result.data && result.data.id) {
+                    // Add to array if not already present
+                    const existingIndex = this.state.furniture.findIndex(f => f.id === result.data.id);
+                    if (existingIndex === -1) {
+                        this.state.furniture.unshift(result.data);
+                        index = 0;
+                    } else {
+                        index = existingIndex;
+                    }
+                } else {
+                    this.toast('Furniture item not found', 'error');
+                    return;
+                }
+            } catch (error) {
+                console.error('Failed to load furniture item:', error);
+                this.toast('Failed to load furniture item', 'error');
+                return;
+            }
+        }
+
+        // Track this view in recently viewed
+        this.trackRecentlyViewed(furnitureId);
 
         this.state.lightbox.isOpen = true;
         this.state.lightbox.currentIndex = index;
         
-        this.updateLightboxContent();
-        
         this.elements.lightbox?.classList.add('active');
         document.body.style.overflow = 'hidden';
         
-        // Focus the lightbox for keyboard navigation
         this.elements.lightbox?.focus();
+        
+        // Update content
+        await this.updateLightboxContent();
     },
 
     /**
@@ -811,10 +822,38 @@ const App = {
     },
 
     /**
+     * Track a furniture view in localStorage
+     */
+    trackRecentlyViewed(furnitureId) {
+        try {
+            let recent = JSON.parse(localStorage.getItem(this.recentlyViewed.key) || '[]');
+            
+            recent = recent.filter(id => id !== furnitureId);
+            recent.unshift(furnitureId);
+            recent = recent.slice(0, this.recentlyViewed.maxItems);
+            
+            localStorage.setItem(this.recentlyViewed.key, JSON.stringify(recent));
+        } catch (e) {
+            // localStorage not available or quota exceeded
+        }
+    },
+
+    /**
+     * Get recently viewed furniture IDs
+     */
+    getRecentlyViewed() {
+        try {
+            return JSON.parse(localStorage.getItem(this.recentlyViewed.key) || '[]');
+        } catch {
+            return [];
+        }
+    },
+
+    /**
      * Navigate to previous item in lightbox
      */
     lightboxPrev() {
-        if (this.state.lightbox.currentIndex > 0) {
+        if (this.state.lightbox.currentIndex > 0 && !this.state.lightbox.isNavigating) {
             this.state.lightbox.currentIndex--;
             this.updateLightboxContent();
         }
@@ -824,67 +863,99 @@ const App = {
      * Navigate to next item in lightbox
      */
     lightboxNext() {
-        if (this.state.lightbox.currentIndex < this.state.furniture.length - 1) {
+        if (this.state.lightbox.currentIndex < this.state.furniture.length - 1 && !this.state.lightbox.isNavigating) {
             this.state.lightbox.currentIndex++;
             this.updateLightboxContent();
         }
     },
 
     /**
-     * Update lightbox content for current item
+     * Update lightbox content - simple direct swap with fixed dimensions
      */
-    updateLightboxContent() {
+    async updateLightboxContent() {
         const index = this.state.lightbox.currentIndex;
         const item = this.state.furniture[index];
         
         if (!item) return;
 
-        // Update image
-        const imageUrl = item.image_url || '/images/placeholder.svg';
-        if (this.elements.lightboxImage) {
-            this.elements.lightboxImage.src = imageUrl;
-            this.elements.lightboxImage.alt = item.name;
+        // Prevent rapid navigation
+        if (this.state.lightbox.isNavigating) {
+            return;
         }
+        this.state.lightbox.isNavigating = true;
 
-        // Update title
+        const imageUrl = item.image_url || '/images/placeholder.svg';
+        const activeImg = this.elements.lightboxImage;
+        
+        // Update text content
         if (this.elements.lightboxTitle) {
             this.elements.lightboxTitle.textContent = item.name;
         }
-
-        // Update meta
         if (this.elements.lightboxMeta) {
-            this.elements.lightboxMeta.textContent = `${item.category_name} • $${this.formatNumber(item.price)}`;
+            // Build categories display for lightbox (show all)
+            const categories = item.categories || [];
+            let categoryText = '';
+            if (categories.length > 0) {
+                categoryText = categories.map(c => c.name).join(', ');
+            } else if (item.category_name) {
+                categoryText = item.category_name;
+            }
+            this.elements.lightboxMeta.textContent = `${categoryText} • $${this.formatNumber(item.price)}`;
         }
-
-        // Update copy button
+        this.updateLightboxTags(item.tags || []);
+        
         if (this.elements.lightboxCopy) {
             this.elements.lightboxCopy.dataset.name = item.name;
         }
-
-        // Update favorite button
         if (this.elements.lightboxFavorite) {
             this.elements.lightboxFavorite.dataset.id = item.id;
             this.updateLightboxFavoriteButton(item.id);
         }
-
-        // Update edit button link (admin)
         if (this.elements.lightboxEdit) {
             this.elements.lightboxEdit.href = `/admin/?page=furniture&action=edit&id=${item.id}`;
         }
-
-        // Update suggest edit link (user)
         if (this.elements.lightboxSuggestEdit) {
             this.elements.lightboxSuggestEdit.href = `/dashboard/?page=submissions&action=new&furniture_id=${item.id}`;
         }
-
-        // Update navigation buttons
         if (this.elements.lightboxPrev) {
             this.elements.lightboxPrev.disabled = index === 0;
         }
         if (this.elements.lightboxNext) {
             this.elements.lightboxNext.disabled = index === this.state.furniture.length - 1;
         }
+        
+        // Direct image swap (no fade, container dimensions are fixed)
+        if (activeImg) {
+            activeImg.src = imageUrl;
+            activeImg.alt = item.name;
+        }
+        
+        // Allow navigation again
+        this.state.lightbox.isNavigating = false;
     },
+
+    /**
+     * Update lightbox tags display (conditional rendering)
+     */
+    updateLightboxTags(tags) {
+        const tagsContainer = this.elements.lightboxTags;
+        if (!tagsContainer) return;
+        
+        if (!tags || tags.length === 0) {
+            tagsContainer.style.display = 'none';
+            return;
+        }
+        
+        const escapeHtml = window.GTAW.escapeHtml;
+        const tagsHtml = tags.map(tag => {
+            const tagColor = tag.color || '#6b7280';
+            return `<span class="tag" style="border-color: ${tagColor}; color: ${tagColor};">${escapeHtml(tag.name)}</span>`;
+        }).join('');
+        
+        tagsContainer.innerHTML = tagsHtml;
+        tagsContainer.style.display = 'flex';
+    },
+
 
     /**
      * Update lightbox favorite button state
@@ -900,163 +971,39 @@ const App = {
     },
 
     /**
-     * Show modal - matching dashboard styling
+     * Show modal - delegate to shared helper
      */
     showModal(title, content) {
-        // Remove existing modal if any
-        const existing = document.getElementById('app-modal');
-        if (existing) existing.remove();
-        
-        const modal = document.createElement('div');
-        modal.id = 'app-modal';
-        modal.className = 'modal-overlay active';
-        modal.innerHTML = `
-            <div class="modal">
-                <div class="modal-header">
-                    <h2>${this.escapeHtml(title)}</h2>
-                    <button class="modal-close" onclick="App.closeModal()">&times;</button>
-                </div>
-                <div class="modal-body">
-                    ${content}
-                </div>
-            </div>
-        `;
-        
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                this.closeModal();
-            }
-        });
-        
-        document.body.appendChild(modal);
+        if (window.GTAW) {
+            window.GTAW.showModal('app-modal', title, content, () => {
+                this.state.currentFurnitureForCollection = null;
+            });
+        }
     },
 
     /**
      * Close modal
      */
     closeModal() {
-        const modal = document.getElementById('app-modal');
-        if (modal) modal.remove();
+        if (window.GTAW) {
+            window.GTAW.closeModal('app-modal');
+        }
         this.state.currentFurnitureForCollection = null;
     },
 
     /**
      * Open collection modal
+     * Delegates to shared GTAW.collectionPicker module
      */
-    async openCollectionModal(furnitureId) {
-        this.state.currentFurnitureForCollection = furnitureId;
-        
-        // Fetch user's collections
-        try {
-            const response = await fetch('/dashboard/api.php?action=collections');
-            const result = await response.json();
-            
-            if (!result.success) {
-                this.toast(result.error || 'Failed to load collections', 'error');
-                return;
-            }
-            
-            const collections = result.data;
-            let modalBody;
-            
-            if (collections.length === 0) {
-                modalBody = `
-                    <p style="margin-bottom: var(--spacing-md);">You haven't created any collections yet.</p>
-                    <a href="/dashboard/?page=collections&action=add" class="btn btn-primary">Create Collection</a>
-                `;
-            } else {
-                // Check which collections contain this item
-                const containsResponse = await fetch(`/dashboard/api.php?action=collections/contains&furniture_id=${furnitureId}`);
-                const containsResult = await containsResponse.json();
-                const containsIds = containsResult.success ? containsResult.data : [];
-                
-                modalBody = `
-                    <div style="display: flex; flex-direction: column; gap: var(--spacing-sm);">
-                        ${collections.map(col => `
-                            <button onclick="App.toggleCollectionItem(${col.id})" 
-                                    class="btn ${containsIds.includes(col.id) ? 'btn-primary' : ''}"
-                                    style="justify-content: space-between; width: 100%;"
-                                    data-collection-id="${col.id}"
-                                    data-item-count="${col.item_count}">
-                                <span>${this.escapeHtml(col.name)}</span>
-                                <span style="opacity: 0.7; font-size: 0.875rem;">${containsIds.includes(col.id) ? '✓ Added' : col.item_count + ' items'}</span>
-                            </button>
-                        `).join('')}
-                    </div>
-                    <div style="margin-top: var(--spacing-lg); padding-top: var(--spacing-md); border-top: 1px solid var(--border-color);">
-                        <a href="/dashboard/?page=collections&action=add" class="btn btn-sm">+ New Collection</a>
-                    </div>
-                `;
-            }
-            
-            // Create or update modal
-            this.showModal('Add to Collection', modalBody);
-        } catch (error) {
-            console.error('Load collections error:', error);
-            this.toast('Failed to load collections', 'error');
-        }
+    openCollectionModal(furnitureId) {
+        window.GTAW.collectionPicker.open(furnitureId);
     },
 
     /**
-     * Close collection modal (alias for consistency)
+     * Close collection modal
      */
     closeCollectionModal() {
-        this.closeModal();
-    },
-
-    /**
-     * Toggle item in collection
-     */
-    async toggleCollectionItem(collectionId) {
-        const furnitureId = this.state.currentFurnitureForCollection;
-        if (!furnitureId) return;
-        
-        const button = document.querySelector(`button[data-collection-id="${collectionId}"]`);
-        const isInCollection = button.classList.contains('btn-primary');
-        
-        const csrfToken = this.getCsrfToken();
-        try {
-            const action = isInCollection ? 'collections/remove-item' : 'collections/add-item';
-            const response = await fetch(`/dashboard/api.php?action=${action}`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': csrfToken || ''
-                },
-                body: JSON.stringify({
-                    collection_id: collectionId,
-                    furniture_id: furnitureId,
-                    csrf_token: csrfToken
-                }),
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-                button.classList.toggle('btn-primary');
-                const span = button.querySelector('span:last-child');
-                if (span) {
-                    // Match dashboard behavior: show item count when removing
-                    const itemCount = button.dataset.itemCount || '0';
-                    span.textContent = isInCollection ? itemCount + ' items' : '✓ Added';
-                }
-                this.toast(isInCollection ? 'Removed from collection' : 'Added to collection', 'success');
-            } else {
-                this.toast(result.error || 'Failed to update collection', 'error');
-            }
-        } catch (error) {
-            console.error('Toggle collection error:', error);
-            this.toast('Network error', 'error');
-        }
-    },
-
-    /**
-     * Escape HTML for safe insertion
-     */
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        window.GTAW.collectionPicker.close();
     },
 
     /**
@@ -1121,25 +1068,48 @@ const App = {
             .join('');
 
         this.renderPagination();
-        
-        // Check for furniture param in URL (deep link)
         this.handleDeepLink();
     },
 
     /**
      * Handle deep link to specific furniture
      */
-    handleDeepLink() {
+    async handleDeepLink() {
         const params = new URLSearchParams(window.location.search);
         const furnitureId = params.get('furniture');
         if (furnitureId) {
             const id = parseInt(furnitureId, 10);
-            // Remove from URL to prevent re-opening
+            if (isNaN(id) || id <= 0) return;
+            
             params.delete('furniture');
             const newUrl = params.toString() ? `?${params}` : window.location.pathname;
             window.history.replaceState({}, '', newUrl);
-            // Open lightbox
+            
+            // Check if furniture is already in the current array
+            const existingIndex = this.state.furniture.findIndex(f => f.id === id);
+            if (existingIndex !== -1) {
+                // Furniture is already loaded, open lightbox directly
             setTimeout(() => this.openLightbox(id), 100);
+                return;
+            }
+            
+            // Furniture not in current page, fetch it from API
+            try {
+                const result = await this.api('furniture/single', { params: { id } });
+                if (result.data && result.data.id) {
+                    // Add the furniture item to the array if not already present
+                    const itemIndex = this.state.furniture.findIndex(f => f.id === result.data.id);
+                    if (itemIndex === -1) {
+                        // Add to beginning of array for easy access
+                        this.state.furniture.unshift(result.data);
+                    }
+                    // Open lightbox with the fetched item
+                    setTimeout(() => this.openLightbox(id), 100);
+                }
+            } catch (error) {
+                console.error('Failed to load furniture item:', error);
+                this.toast('Failed to load furniture item', 'error');
+            }
         }
     },
 
@@ -1174,15 +1144,30 @@ const App = {
 
     /**
      * Render a single furniture card
+     * 
+     * Duplicates PHP's renderFurnitureCard() for client-side rendering.
+     * Keep HTML structure and class names consistent between both functions.
      */
     renderCard(item) {
         const isFav = this.state.favorites.has(item.id);
         const allTags = item.tags || [];
         const imageUrl = item.image_url || '/images/placeholder.svg';
+        const categories = item.categories || [];
 
-        // Calculate how many tags fit based on character length
-        // Available width is ~180px, avg char ~7px + padding ~16px per tag
-        const maxChars = 28; // Approximate character budget for tags row
+        // Build category display (primary + overflow)
+        let categoryHtml = '';
+        if (categories.length > 0) {
+            categoryHtml = `<span class="category">${this.escapeHtml(categories[0].name)}</span>`;
+            if (categories.length > 1) {
+                const allCatNames = categories.map(c => c.name).join(', ');
+                categoryHtml += `<span class="category-more" title="${this.escapeHtml(allCatNames)}">+${categories.length - 1}</span>`;
+            }
+        } else if (item.category_name) {
+            // Fallback for backwards compatibility
+            categoryHtml = `<span class="category">${this.escapeHtml(item.category_name)}</span>`;
+        }
+
+        const maxChars = 28;
         let charCount = 0;
         let visibleTags = [];
         
@@ -1216,7 +1201,7 @@ const App = {
                 <div class="card-body">
                     <h3 title="${this.escapeHtml(item.name)}">${this.escapeHtml(item.name)}</h3>
                     <p class="meta">
-                        <span class="category">${this.escapeHtml(item.category_name)}</span>
+                        ${categoryHtml}
                         <span class="separator">•</span>
                         <span class="price">$${this.formatNumber(item.price)}</span>
                     </p>
@@ -1299,11 +1284,7 @@ const App = {
         }
 
         container.innerHTML = html;
-        
-        // Bind dropdown events
         this.bindTagDropdownEvents();
-
-        // Update active tags display and clear button
         this.updateActiveTagsDisplay();
     },
 
@@ -1373,7 +1354,6 @@ const App = {
             });
         });
 
-        // Handle checkbox changes
         container.querySelectorAll('.tag-checkbox-item input').forEach(checkbox => {
             checkbox.addEventListener('change', (e) => {
                 e.stopPropagation();
@@ -1381,7 +1361,6 @@ const App = {
             });
         });
 
-        // Handle clear buttons
         container.querySelectorAll('.tag-group-panel-clear').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1417,7 +1396,6 @@ const App = {
             groupTags = group?.tags || [];
         }
 
-        // Remove all tags from this group from the filter
         groupTags.forEach(tag => {
             const index = this.state.filters.tags.indexOf(tag.slug);
             if (index !== -1) {
@@ -1444,16 +1422,12 @@ const App = {
             this.state.filters.tags.splice(index, 1);
         }
         
-        // Update checkbox state in dropdown
         const checkbox = document.querySelector(`.tag-checkbox-item input[data-slug="${slug}"]`);
         if (checkbox) {
             checkbox.checked = index === -1;
         }
         
-        // Update group count badges
         this.updateGroupCounts();
-        
-        // Update active tags display
         this.updateActiveTagsDisplay();
         
         this.state.pagination.page = 1;
@@ -1741,31 +1715,9 @@ const App = {
      * Show toast notification with icon
      */
     toast(message, type = 'info') {
-        const container = this.elements.toastContainer;
-        if (!container) return;
-
-        const icons = {
-            success: '✓',
-            error: '✕',
-            warning: '⚠',
-            info: 'ℹ'
-        };
-
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        toast.innerHTML = `
-            <span class="toast-icon">${icons[type] || icons.info}</span>
-            <span class="toast-message">${this.escapeHtml(message)}</span>
-        `;
-        toast.setAttribute('role', 'alert');
-
-        container.appendChild(toast);
-
-        // Remove after delay
-        setTimeout(() => {
-            toast.classList.add('hiding');
-            setTimeout(() => toast.remove(), 300);
-        }, 3000);
+        if (window.GTAW) {
+            window.GTAW.toast(message, type);
+        }
     },
 
     /**
@@ -1776,13 +1728,10 @@ const App = {
     },
 
     /**
-     * Escape HTML to prevent XSS
+     * Escape HTML to prevent XSS (proxy to shared helper)
      */
     escapeHtml(text) {
-        if (typeof text !== 'string') return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return window.GTAW ? window.GTAW.escapeHtml(text) : String(text ?? '');
     }
 };
 
