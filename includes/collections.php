@@ -142,19 +142,18 @@ function userOwnsCollection(PDO $pdo, int $userId, int $collectionId): bool
 function getCollectionItems(PDO $pdo, int $collectionId): array
 {
     $stmt = $pdo->prepare('
-        SELECT f.id, f.name, f.category_id, f.price, f.image_url,
-               c.name as category_name, c.slug as category_slug,
+        SELECT f.id, f.name, f.price, f.image_url,
                ci.sort_order, ci.added_at
         FROM collection_items ci
         INNER JOIN furniture f ON ci.furniture_id = f.id
-        INNER JOIN categories c ON f.category_id = c.id
         WHERE ci.collection_id = ?
         ORDER BY ci.sort_order ASC, ci.added_at DESC
     ');
     $stmt->execute([$collectionId]);
     $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
-    // Attach tags
+    // Attach categories and tags
+    $items = attachCategoriesToFurniture($pdo, $items);
     return attachTagsToFurniture($pdo, $items);
 }
 
