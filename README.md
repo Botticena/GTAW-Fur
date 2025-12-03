@@ -21,9 +21,9 @@ Just need a GTA World account to get started!
 
 ### 🔍 Browse & Search
 
-- Filter by category (beds, seating, tables, lighting, etc.)
+- Filter by category (beds, seating, tables, lighting, etc.) — furniture can now belong to multiple categories (for example, **Seating + Office**)
 - Filter by tags (style, mood, size, materials, effects, themes)
-- Search by name as you type
+- Search by name as you type, with smarter matching **synonyms** (for example, “sofa” also finds “couch”)
 - Sort by name, price, or newest
 - Show only your favorites (when logged in)
 
@@ -124,13 +124,14 @@ When you're logged in, you can access your dashboard to manage everything:
 See quick stats about your favorites, collections, and submissions, plus some quick links.
 
 ### My Favorites
-View all your saved furniture, remove items you don't need anymore, and export everything as `/sf` commands.
+View all your saved furniture, remove items you don't need anymore, **clear all favorites in one click**, and export everything as `/sf` commands.
 
 ### My Collections
 Create new collections, edit existing ones (name, description, make them public/private), add or remove furniture, share public collections, export them, or delete them.
 
 ### Submissions
 Submit new furniture, suggest edits, see the status of your submissions (pending, approved, rejected), edit pending ones before they're reviewed, and see feedback if something gets rejected.
+While filling out furniture details, the dashboard will **suggest potential duplicates** so you can avoid adding near-identical items by mistake.
 
 ---
 
