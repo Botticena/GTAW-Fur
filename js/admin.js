@@ -22,24 +22,23 @@ const Admin = {
         this.initForms();
         this.initBatchOperations();
         this.initDragAndDrop();
-        this.initImagePreview();
         this.initColorInputs();
         this.initDeleteButtons();
+        
+        window.GTAW.tableSearch.init();
+        window.GTAW.imagePreview.init();
+        window.GTAW.duplicateDetection.init({
+            editLinkPrefix: '/admin/?page=furniture&action=edit&id=',
+            editLinkText: 'Edit',
+            hintText: 'Consider editing the existing item instead of creating a duplicate.'
+        });
     },
 
     /**
      * Get CSRF token from hidden input or meta tag
      */
     getCsrfToken() {
-        // Try hidden input first
-        const input = document.querySelector('input[name="csrf_token"]');
-        if (input) return input.value;
-        
-        // Try meta tag
-        const meta = document.querySelector('meta[name="csrf-token"]');
-        if (meta) return meta.content;
-        
-        return null;
+        return window.GTAW ? window.GTAW.getCsrfToken() : null;
     },
 
     /**
@@ -56,7 +55,6 @@ const Admin = {
             });
         });
 
-        // Handle form submissions via AJAX
         document.querySelectorAll('form[data-ajax]').forEach(form => {
             form.addEventListener('submit', (e) => this.handleAjaxForm(e));
         });
@@ -158,7 +156,7 @@ const Admin = {
             });
 
             if (result.success) {
-                this.toast(`${count} item${count > 1 ? 's' : ''} deleted`, 'success');
+                        this.toast(`${count} item${count > 1 ? 's' : ''} deleted`, 'success');
                 // Remove rows
                 ids.forEach(id => {
                     document.querySelector(`tr[data-id="${id}"]`)?.remove();
@@ -480,7 +478,7 @@ const Admin = {
             });
 
             if (result.success) {
-                this.toast(result.message || 'Deleted successfully', 'success');
+            this.toast(result.message || 'Deleted successfully', 'success');
                 
                 // Remove row from table
                 const row = document.querySelector(`tr[data-id="${id}"]`);
@@ -600,6 +598,124 @@ const Admin = {
         }
     },
 
+    // =========================================
+    // BULK ACTIONS
+    // =========================================
+    
+    /**
+     * Get selected submission IDs
+     */
+    bulkGetSelectedIds() {
+        const checkboxes = document.querySelectorAll('.bulk-select-item:checked');
+        return Array.from(checkboxes).map(cb => parseInt(cb.value, 10));
+    },
+    
+    /**
+     * Toggle all checkboxes
+     */
+    bulkToggleAll(checked) {
+        document.querySelectorAll('.bulk-select-item').forEach(cb => {
+            cb.checked = checked;
+        });
+        this.bulkUpdateSelection();
+    },
+    
+    /**
+     * Update selection count and show/hide bulk actions bar
+     */
+    bulkUpdateSelection() {
+        const selected = this.bulkGetSelectedIds();
+        const count = selected.length;
+        const bar = document.getElementById('bulk-actions-bar');
+        const countEl = document.getElementById('bulk-selection-count');
+        
+        if (bar && countEl) {
+            bar.style.display = count > 0 ? 'flex' : 'none';
+            countEl.textContent = `${count} selected`;
+        }
+        
+        // Update "select all" checkbox state
+        const selectAllCb = document.getElementById('bulk-select-all');
+        const allCheckboxes = document.querySelectorAll('.bulk-select-item');
+        if (selectAllCb && allCheckboxes.length > 0) {
+            selectAllCb.checked = count === allCheckboxes.length;
+            selectAllCb.indeterminate = count > 0 && count < allCheckboxes.length;
+        }
+    },
+    
+    /**
+     * Clear all selections
+     */
+    bulkClearSelection() {
+        document.querySelectorAll('.bulk-select-item').forEach(cb => {
+            cb.checked = false;
+        });
+        const selectAllCb = document.getElementById('bulk-select-all');
+        if (selectAllCb) selectAllCb.checked = false;
+        this.bulkUpdateSelection();
+    },
+    
+    /**
+     * Bulk approve selected submissions
+     */
+    async bulkApprove() {
+        const ids = this.bulkGetSelectedIds();
+        if (ids.length === 0) {
+            this.toast('No submissions selected', 'info');
+            return;
+        }
+        
+        if (!confirm(`Approve ${ids.length} submission(s)?`)) return;
+        
+        try {
+            const result = await this.api('submissions/bulk-approve', {
+                method: 'POST',
+                body: { ids }
+            });
+            
+            if (result.success) {
+                this.toast(`Approved ${result.data.approved} submission(s)`, 'success');
+                window.location.reload();
+            } else {
+                this.toast(result.error || 'Failed to approve submissions', 'error');
+            }
+        } catch (error) {
+            console.error('Bulk approve error:', error);
+            this.toast('Network error. Please try again.', 'error');
+        }
+    },
+    
+    /**
+     * Bulk reject selected submissions
+     */
+    async bulkReject() {
+        const ids = this.bulkGetSelectedIds();
+        if (ids.length === 0) {
+            this.toast('No submissions selected', 'info');
+            return;
+        }
+        
+        const notes = prompt(`Enter reason for rejecting ${ids.length} submission(s) (optional):`);
+        if (notes === null) return; // Cancelled
+        
+        try {
+            const result = await this.api('submissions/bulk-reject', {
+                method: 'POST',
+                body: { ids, notes }
+            });
+            
+            if (result.success) {
+                this.toast(`Rejected ${result.data.rejected} submission(s)`, 'success');
+                window.location.reload();
+            } else {
+                this.toast(result.error || 'Failed to reject submissions', 'error');
+            }
+        } catch (error) {
+            console.error('Bulk reject error:', error);
+            this.toast('Network error. Please try again.', 'error');
+        }
+    },
+
     /**
      * Import CSV
      */
@@ -681,74 +797,10 @@ const Admin = {
 
     /**
      * Show toast notification
+     * Delegates to shared GTAW.toast() for consistent behavior
      */
     toast(message, type = 'info') {
-        const container = document.getElementById('toast-container') || this.createToastContainer();
-        
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        toast.textContent = message;
-        toast.setAttribute('role', 'alert');
-
-        container.appendChild(toast);
-
-        setTimeout(() => {
-            toast.classList.add('hiding');
-            setTimeout(() => toast.remove(), 300);
-        }, 3000);
-    },
-
-    /**
-     * Create toast container if it doesn't exist
-     */
-    createToastContainer() {
-        const container = document.createElement('div');
-        container.id = 'toast-container';
-        container.className = 'toast-container';
-        container.setAttribute('aria-live', 'polite');
-        document.body.appendChild(container);
-        return container;
-    },
-
-    /**
-     * Initialize live image preview for URL inputs
-     */
-    initImagePreview() {
-        const imageUrlInput = document.getElementById('image_url');
-        const previewImg = document.getElementById('preview-img');
-        
-        if (!imageUrlInput || !previewImg) return;
-        
-        // Debounce timer
-        let debounceTimer = null;
-        
-        const updatePreview = (url) => {
-            if (!url) {
-                previewImg.src = '/images/placeholder.svg';
-                return;
-            }
-            
-            // Handle relative paths
-            if (url.startsWith('/')) {
-                previewImg.src = url;
-            } else if (url.startsWith('http://') || url.startsWith('https://')) {
-                previewImg.src = url;
-            } else {
-                previewImg.src = '/images/placeholder.svg';
-            }
-        };
-        
-        imageUrlInput.addEventListener('input', (e) => {
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => {
-                updatePreview(e.target.value.trim());
-            }, 300);
-        });
-        
-        // Handle image load errors
-        previewImg.addEventListener('error', () => {
-            previewImg.src = '/images/placeholder.svg';
-        });
+        window.GTAW.toast(message, type);
     },
 
     /**
@@ -840,12 +892,10 @@ const Admin = {
     },
 
     /**
-     * Escape HTML
+     * Escape HTML (delegates to shared helper)
      */
     escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return window.GTAW ? window.GTAW.escapeHtml(text) : String(text ?? '');
     }
 };
 
