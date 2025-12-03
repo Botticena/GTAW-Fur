@@ -14,7 +14,6 @@ require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/api.php';
 require_once __DIR__ . '/includes/api-controller.php';
 
-// Initialize common API patterns (headers, DB connection, CSRF, request info)
 $api = initializeApi();
 $method = $api['method'];
 $action = $api['action'];
@@ -32,7 +31,7 @@ try {
             requireMethod('GET');
 
             $page = max(1, getQueryInt('page', 1));
-            $perPage = min(MAX_ITEMS_PER_PAGE, max(1, getQueryInt('per_page', 24)));
+            $perPage = min(MAX_ITEMS_PER_PAGE, max(1, getQueryInt('per_page', 50)));
             $category = getQuery('category', null);
             $category = $category !== null && $category !== '' ? $category : null;
             $tagsStr = getQuery('tags', '');
@@ -66,7 +65,7 @@ try {
             }
 
             $page = max(1, getQueryInt('page', 1));
-            $perPage = min(MAX_ITEMS_PER_PAGE, max(1, getQueryInt('per_page', 24)));
+            $perPage = min(MAX_ITEMS_PER_PAGE, max(1, getQueryInt('per_page', 50)));
 
             // Favorites only filter
             $favoritesOnly = !empty(getQuery('favorites_only', ''));
@@ -79,7 +78,11 @@ try {
             }
 
             $result = searchFurniture($pdo, $query, $page, $perPage, $userFavoritesId);
-            jsonSuccess($result['items'] ?? [], null, $result['pagination'] ?? null);
+            
+            // Pass through search metadata if synonyms were expanded
+            $extra = isset($result['search_meta']) ? ['search_meta' => $result['search_meta']] : null;
+            
+            jsonSuccess($result['items'] ?? [], null, $result['pagination'] ?? null, $extra);
             break;
 
         case 'furniture/single':
@@ -88,7 +91,6 @@ try {
             $id = getQueryInt('id', 0);
             $item = requireFurniture($pdo, $id);
 
-            // Add favorite status if user is logged in
             $userId = getCurrentUserId();
             if ($userId) {
                 $item['is_favorited'] = isFavorited($pdo, $userId, $id);
@@ -97,20 +99,85 @@ try {
             jsonSuccess($item);
             break;
 
+        case 'furniture/batch':
+            requireMethod('GET');
+
+            $idsParam = getQuery('ids', '');
+            if (empty($idsParam)) {
+                jsonSuccess([]);
+                break;
+            }
+            
+            // Prevent DoS via extremely long strings (max 1000 chars)
+            if (strlen($idsParam) > 1000) {
+                jsonError('Invalid request: parameter too long', 400);
+                break;
+            }
+            
+            $ids = array_filter(array_map('intval', explode(',', $idsParam)));
+            $ids = array_slice($ids, 0, 20);
+            
+            if (empty($ids)) {
+                jsonSuccess([]);
+                break;
+            }
+            
+            $items = getFurnitureByIds($pdo, $ids);
+            jsonSuccess($items);
+            break;
+
+        case 'furniture/check-duplicates':
+            requireMethod('GET');
+
+            $name = getQuery('name', '');
+            
+            // Require minimum length for meaningful matching
+            if (strlen($name) < 3) {
+                jsonSuccess([]);
+                break;
+            }
+            
+            $categoryId = getQuery('category_id', '');
+            $categoryId = $categoryId !== '' ? (int)$categoryId : null;
+            
+            $excludeId = getQuery('exclude_id', '');
+            $excludeId = $excludeId !== '' ? (int)$excludeId : null;
+            
+            // findPotentialDuplicates returns items with categories already attached
+            $matches = findPotentialDuplicates($pdo, $name, $categoryId, $excludeId);
+            $matches = attachTagsToFurniture($pdo, $matches);
+            
+            jsonSuccess($matches);
+            break;
+
         case 'categories':
             requireMethod('GET');
-            jsonSuccess(getCategories($pdo));
+            jsonSuccess(getCategories($pdo), null, null, null, true, CACHE_TTL_CATEGORIES);
             break;
 
         case 'tags':
             requireMethod('GET');
-            // Return grouped structure for frontend filtering UI
-            jsonSuccess(getTagsGrouped($pdo));
+            jsonSuccess(getTagsGrouped($pdo), null, null, null, true, CACHE_TTL_TAGS);
             break;
         
         case 'tags/flat':
-            // Return flat list (for backwards compatibility or simple use cases)
+            /**
+             * @deprecated Use /api.php?action=tags instead
+             */
             requireMethod('GET');
+            
+            header('X-API-Deprecated: true');
+            header('X-API-Deprecation-Message: This endpoint is deprecated. Use /api.php?action=tags instead.');
+            header('X-API-Deprecation-Date: 2025-01-01');
+            
+            logException('api_deprecation', new Exception(
+                'Deprecated endpoint tags/flat accessed. ' .
+                'Client should migrate to tags endpoint for grouped structure. ' .
+                'IP: ' . ($_SERVER['REMOTE_ADDR'] ?? 'unknown') . ', ' .
+                'User-Agent: ' . ($_SERVER['HTTP_USER_AGENT'] ?? 'unknown') . ', ' .
+                'Referer: ' . ($_SERVER['HTTP_REFERER'] ?? 'unknown')
+            ));
+            
             jsonSuccess(getTags($pdo));
             break;
 
@@ -193,14 +260,43 @@ try {
                 );
             }
 
-            jsonError('Method not allowed', 405);
+            jsonError(ERROR_METHOD_NOT_ALLOWED, 405);
+            break;
+
+        case 'favorites/clear':
+            if (!in_array($method, ['POST', 'DELETE'])) {
+                jsonError(ERROR_METHOD_NOT_ALLOWED, 405);
+            }
+            
+            $userId = getCurrentUserId();
+            if (!$userId) {
+                jsonError(ERROR_AUTH_REQUIRED, 401);
+            }
+            
+            // Rate limiting for clear all (stricter - 3 per hour per user)
+            withRateLimit(
+                'api_favorites_clear',
+                3,
+                3600,
+                function () use ($pdo, $userId) {
+                    $stmt = $pdo->prepare('DELETE FROM favorites WHERE user_id = ?');
+                    $stmt->execute([$userId]);
+                    $count = $stmt->rowCount();
+                    
+                    jsonSuccess([
+                        'message' => 'All favorites cleared',
+                        'count' => $count
+                    ]);
+                },
+                (string) $userId
+            );
             break;
 
         case 'user':
             requireMethod('GET');
 
             if (!isLoggedIn()) {
-                jsonError('Authentication required', 401);
+                jsonError(ERROR_AUTH_REQUIRED, 401);
             }
 
             $user = getCurrentUser();
@@ -209,14 +305,14 @@ try {
             break;
 
         default:
-            jsonError('Unknown endpoint', 404);
+            jsonError(ERROR_UNKNOWN_ENDPOINT, 404);
     }
 
 } catch (PDOException $e) {
-    error_log('API Database Error: ' . $e->getMessage());
-    jsonError('Database error', 500);
+    logException('api_db', $e);
+    jsonError(ERROR_DB_ERROR, 500);
 } catch (Exception $e) {
-    error_log('API Error: ' . $e->getMessage());
-    jsonError('Internal server error', 500);
+    logException('api', $e);
+    jsonError(ERROR_INTERNAL, 500);
 }
 
