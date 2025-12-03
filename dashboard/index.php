@@ -17,18 +17,14 @@ require_once __DIR__ . '/../includes/submissions.php';
 // Require user authentication
 requireAuth();
 
-// Get current user
 $currentUser = getCurrentUser();
 $userId = (int) $_SESSION['user_id'];
 
-// Get database connection
 try {
     $pdo = getDb();
 } catch (RuntimeException $e) {
     throw new RuntimeException('Database connection not available');
 }
-
-// Get current page
 $page = getQuery('page', 'overview');
 $action = getQuery('action', 'list');
 $id = getQueryInt('id', 0);
@@ -101,15 +97,22 @@ switch ($page) {
 
 function renderOverview(PDO $pdo, int $userId): void
 {
-    $favoritesCount = countUserFavorites($pdo, $userId);
+    $favorites = getUserFavorites($pdo, $userId);
+    $favoritesCount = count($favorites);
     $collections = getUserCollections($pdo, $userId);
-    $submissionsResult = getUserSubmissions($pdo, $userId, 1, 5);
+    $submissionsResult = getUserSubmissions($pdo, $userId, 1, 100);
+    $submissions = $submissionsResult['items'];
+    
+    // Submission stats
+    $pendingCount = count(array_filter($submissions, fn($s) => $s['status'] === SUBMISSION_STATUS_PENDING));
+    $approvedCount = count(array_filter($submissions, fn($s) => $s['status'] === SUBMISSION_STATUS_APPROVED));
     ?>
     <div class="admin-header">
         <h1>📊 Overview</h1>
     </div>
     
     <div class="stats-grid">
+        <!-- Primary Stats -->
         <div class="stat-card">
             <div class="stat-icon">❤️</div>
             <p class="stat-value"><?= number_format($favoritesCount) ?></p>
@@ -124,8 +127,14 @@ function renderOverview(PDO $pdo, int $userId): void
         
         <div class="stat-card">
             <div class="stat-icon">📝</div>
-            <p class="stat-value"><?= number_format($submissionsResult['pagination']['total']) ?></p>
+            <p class="stat-value"><?= number_format(count($submissions)) ?></p>
             <p class="stat-label">Submissions</p>
+        </div>
+        
+        <div class="stat-card">
+            <div class="stat-icon">⏳</div>
+            <p class="stat-value"><?= number_format($pendingCount) ?></p>
+            <p class="stat-label">Pending Review</p>
         </div>
     </div>
     
@@ -135,9 +144,20 @@ function renderOverview(PDO $pdo, int $userId): void
         <a href="/dashboard/?page=submissions&action=new" class="btn btn-primary">📝 Submit Furniture</a>
         <a href="/" class="btn">🔍 Browse Catalog</a>
     </div>
+    
+    <!-- Recently Viewed Section (populated by JS) -->
+    <div id="recently-viewed-section" class="recently-viewed-section" style="display: none;">
+        <h2>Recently Viewed</h2>
+        <div id="recently-viewed-grid" class="recently-viewed-grid">
+            <!-- Populated by JS -->
+        </div>
+    </div>
     <?php
 }
 
+/**
+ * Compute insights from user's favorites
+ */
 function renderFavorites(PDO $pdo, int $userId): void
 {
     $favorites = getUserFavorites($pdo, $userId);
@@ -147,20 +167,36 @@ function renderFavorites(PDO $pdo, int $userId): void
         <div class="actions">
             <?php if (!empty($favorites)): ?>
             <button class="btn" onclick="Dashboard.exportFavorites()">📥 Export</button>
+            <button class="btn btn-danger" onclick="Dashboard.clearAllFavorites(<?= count($favorites) ?>)">🗑️ Clear All</button>
             <?php endif; ?>
         </div>
     </div>
     
     <?php if (empty($favorites)): ?>
-    <div class="data-table-container" style="padding: var(--spacing-xl); text-align: center;">
-        <p style="font-size: 3rem; margin-bottom: var(--spacing-md);">❤️</p>
-        <h3>No favorites yet</h3>
-        <p style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">Browse the catalog and click the heart icon to add items to your favorites.</p>
-        <a href="/" class="btn btn-primary">Browse Catalog</a>
+    <div class="data-table-container">
+        <?= renderEmptyState(
+            '❤️',
+            'No favorites yet',
+            'Browse the catalog and click the heart icon to add items to your favorites.',
+            '/',
+            'Browse Catalog'
+        ) ?>
     </div>
     <?php else: ?>
+    
+    <!-- Search Filter -->
+    <?php if (count($favorites) > 5): ?>
+    <div class="table-filter-bar">
+        <input type="search" 
+               class="table-search-input" 
+               data-table="favorites-table"
+               placeholder="🔍 Search favorites..."
+               aria-label="Search favorites">
+    </div>
+    <?php endif; ?>
+    
     <div class="data-table-container">
-        <table class="data-table">
+        <table id="favorites-table" class="data-table">
             <thead>
                 <tr>
                     <th style="width: 60px;">Image</th>
@@ -172,6 +208,11 @@ function renderFavorites(PDO $pdo, int $userId): void
             </thead>
             <tbody>
                 <?php foreach ($favorites as $item): ?>
+                <?php 
+                $cats = $item['categories'] ?? [];
+                $catDisplay = !empty($cats) ? $cats[0]['name'] : ($item['category_name'] ?? '');
+                if (count($cats) > 1) $catDisplay .= ' +' . (count($cats) - 1);
+                ?>
                 <tr data-id="<?= $item['id'] ?>">
                     <td>
                         <img src="<?= e($item['image_url'] ?? '/images/placeholder.svg') ?>" 
@@ -180,7 +221,7 @@ function renderFavorites(PDO $pdo, int $userId): void
                              onerror="this.src='/images/placeholder.svg'">
                     </td>
                     <td><strong><?= e($item['name']) ?></strong></td>
-                    <td><?= e($item['category_name']) ?></td>
+                    <td><?= e($catDisplay) ?></td>
                     <td>$<?= number_format($item['price']) ?></td>
                     <td class="actions">
                         <button class="btn btn-sm" onclick="Dashboard.copyCommand('<?= e(addslashes($item['name'])) ?>')">📋 Copy</button>
@@ -208,15 +249,30 @@ function renderCollectionsList(PDO $pdo, int $userId): void
     </div>
     
     <?php if (empty($collections)): ?>
-    <div class="data-table-container" style="padding: var(--spacing-xl); text-align: center;">
-        <p style="font-size: 3rem; margin-bottom: var(--spacing-md);">📁</p>
-        <h3>No collections yet</h3>
-        <p style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">Create collections to organize your furniture items into shareable lists.</p>
-        <a href="/dashboard/?page=collections&action=add" class="btn btn-primary">Create Your First Collection</a>
+    <div class="data-table-container">
+        <?= renderEmptyState(
+            '📁',
+            'No collections yet',
+            'Create collections to organize your furniture items into shareable lists.',
+            '/dashboard/?page=collections&action=add',
+            'Create Your First Collection'
+        ) ?>
     </div>
     <?php else: ?>
+    
+    <!-- Search Filter -->
+    <?php if (count($collections) > 5): ?>
+    <div class="table-filter-bar">
+        <input type="search" 
+               class="table-search-input" 
+               data-table="collections-table"
+               placeholder="🔍 Search collections..."
+               aria-label="Search collections">
+    </div>
+    <?php endif; ?>
+    
     <div class="data-table-container">
-        <table class="data-table">
+        <table id="collections-table" class="data-table">
             <thead>
                 <tr>
                     <th>Name</th>
@@ -240,6 +296,7 @@ function renderCollectionsList(PDO $pdo, int $userId): void
                     <td class="actions">
                         <a href="/dashboard/?page=collections&action=view&id=<?= $col['id'] ?>" class="btn btn-sm">View</a>
                         <a href="/dashboard/?page=collections&action=edit&id=<?= $col['id'] ?>" class="btn btn-sm">Edit</a>
+                        <button class="btn btn-sm" onclick="Dashboard.duplicateCollection(<?= $col['id'] ?>, '<?= e(addslashes($col['name'])) ?>')" title="Duplicate">📋</button>
                         <?php if ($col['is_public']): ?>
                         <button class="btn btn-sm" onclick="Dashboard.shareCollection(<?= $col['id'] ?>, '<?= e($col['slug']) ?>', '<?= e($col['owner_username'] ?? $_SESSION['username'] ?? '') ?>')">🔗</button>
                         <?php endif; ?>
@@ -281,15 +338,30 @@ function renderCollectionView(PDO $pdo, int $userId, int $id): void
     <?php endif; ?>
     
     <?php if (empty($items)): ?>
-    <div class="data-table-container" style="padding: var(--spacing-xl); text-align: center;">
-        <p style="font-size: 3rem; margin-bottom: var(--spacing-md);">📦</p>
-        <h3>Collection is empty</h3>
-        <p style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">Browse the catalog and add items to this collection.</p>
-        <a href="/" class="btn btn-primary">Browse Catalog</a>
+    <div class="data-table-container">
+        <?= renderEmptyState(
+            '📦',
+            'Collection is empty',
+            'Browse the catalog and add items to this collection.',
+            '/',
+            'Browse Catalog'
+        ) ?>
     </div>
     <?php else: ?>
+    
+    <!-- Search Filter -->
+    <?php if (count($items) > 5): ?>
+    <div class="table-filter-bar">
+        <input type="search" 
+               class="table-search-input" 
+               data-table="collection-items-table"
+               placeholder="🔍 Search items..."
+               aria-label="Search collection items">
+    </div>
+    <?php endif; ?>
+    
     <div class="data-table-container">
-        <table class="data-table" data-sortable data-collection-id="<?= $id ?>">
+        <table id="collection-items-table" class="data-table" data-sortable data-collection-id="<?= $id ?>">
             <thead>
                 <tr>
                     <th style="width: 40px;">⋮⋮</th>
@@ -302,6 +374,11 @@ function renderCollectionView(PDO $pdo, int $userId, int $id): void
             </thead>
             <tbody>
                 <?php foreach ($items as $index => $item): ?>
+                <?php 
+                $cats = $item['categories'] ?? [];
+                $catDisplay = !empty($cats) ? $cats[0]['name'] : ($item['category_name'] ?? '');
+                if (count($cats) > 1) $catDisplay .= ' +' . (count($cats) - 1);
+                ?>
                 <tr data-id="<?= $item['id'] ?>" data-sort-order="<?= $item['sort_order'] ?? $index ?>">
                     <td class="drag-handle" style="cursor: move; text-align: center; color: var(--text-muted);" title="Drag to reorder">⋮⋮</td>
                     <td>
@@ -311,7 +388,7 @@ function renderCollectionView(PDO $pdo, int $userId, int $id): void
                              onerror="this.src='/images/placeholder.svg'">
                     </td>
                     <td><strong><?= e($item['name']) ?></strong></td>
-                    <td><?= e($item['category_name']) ?></td>
+                    <td><?= e($catDisplay) ?></td>
                     <td>$<?= number_format($item['price']) ?></td>
                     <td class="actions">
                         <button class="btn btn-sm" onclick="Dashboard.copyCommand('<?= e(addslashes($item['name'])) ?>')">📋 Copy</button>
@@ -413,6 +490,7 @@ function renderCollectionEdit(PDO $pdo, int $userId, int $id): void
 function renderSubmissionsList(PDO $pdo, int $userId): void
 {
     $result = getUserSubmissions($pdo, $userId);
+    $submissions = $result['items'];
     ?>
     <div class="admin-header">
         <h1>📝 My Submissions</h1>
@@ -421,16 +499,31 @@ function renderSubmissionsList(PDO $pdo, int $userId): void
         </div>
     </div>
     
-    <?php if (empty($result['items'])): ?>
-    <div class="data-table-container" style="padding: var(--spacing-xl); text-align: center;">
-        <p style="font-size: 3rem; margin-bottom: var(--spacing-md);">📝</p>
-        <h3>No submissions yet</h3>
-        <p style="color: var(--text-secondary); margin-bottom: var(--spacing-lg);">Submit new furniture to add to the catalog, or suggest edits to existing items.</p>
-        <a href="/dashboard/?page=submissions&action=new" class="btn btn-primary">Submit Furniture</a>
+    <?php if (empty($submissions)): ?>
+    <div class="data-table-container">
+        <?= renderEmptyState(
+            '📝',
+            'No submissions yet',
+            'Submit new furniture to add to the catalog, or suggest edits to existing items.',
+            '/dashboard/?page=submissions&action=new',
+            'Submit Furniture'
+        ) ?>
     </div>
     <?php else: ?>
+    
+    <!-- Search Filter -->
+    <?php if (count($submissions) > 5): ?>
+    <div class="table-filter-bar">
+        <input type="search" 
+               class="table-search-input" 
+               data-table="submissions-table"
+               placeholder="🔍 Search submissions..."
+               aria-label="Search submissions">
+    </div>
+    <?php endif; ?>
+    
     <div class="data-table-container">
-        <table class="data-table">
+        <table id="submissions-table" class="data-table">
             <thead>
                 <tr>
                     <th style="width: 80px;">Type</th>
@@ -441,7 +534,7 @@ function renderSubmissionsList(PDO $pdo, int $userId): void
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($result['items'] as $sub): ?>
+                <?php foreach ($submissions as $sub): ?>
                 <tr>
                     <td><span class="badge"><?= $sub['type'] === SUBMISSION_TYPE_NEW ? '✨ New' : '✏️ Edit' ?></span></td>
                     <td>
@@ -478,10 +571,10 @@ function renderSubmissionNew(PDO $pdo): void
     $tagsGrouped = getTagsGrouped($pdo);
     $csrfToken = generateCsrfToken();
     
-    // Check if editing existing furniture (pre-fill)
     $furnitureId = getQueryInt('furniture_id', 0);
     $furniture = $furnitureId > 0 ? getFurnitureById($pdo, $furnitureId) : null;
     $isEdit = $furniture !== null;
+    $itemCategoryIds = $furniture ? array_column($furniture['categories'] ?? [], 'id') : [];
     ?>
     <div class="admin-header">
         <h1><?= $isEdit ? '✏️ Suggest Edit' : '➕ Submit New Furniture' ?></h1>
@@ -499,7 +592,7 @@ function renderSubmissionNew(PDO $pdo): void
         <?php endif; ?>
     </div>
     
-    <form class="admin-form two-column" method="POST" data-ajax 
+    <form class="admin-form form-split" method="POST" data-ajax 
           data-action="/dashboard/api.php?action=submissions/create<?= $isEdit ? '&furniture_id=' . $furnitureId : '' ?>" 
           data-redirect="/dashboard/?page=submissions&success=Submission+received">
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
@@ -507,82 +600,103 @@ function renderSubmissionNew(PDO $pdo): void
         <input type="hidden" name="type" value="edit">
         <?php endif; ?>
         
-        <!-- Left Column: Main Fields -->
-        <div class="form-column-left">
-            <div class="form-group">
-                <label for="name">Furniture Name *</label>
-                <input type="text" id="name" name="name" required maxlength="255" 
-                       value="<?= e($furniture['name'] ?? '') ?>"
-                       placeholder="e.g., prop_sofa_modern_01">
-                <p class="form-help">The exact prop name used in-game</p>
-            </div>
-            
-            <div class="form-group">
-                <label for="category_id">Category *</label>
-                <select id="category_id" name="category_id" required>
-                    <option value="">Select a category</option>
-                    <?php foreach ($categories as $cat): ?>
-                    <option value="<?= $cat['id'] ?>" <?= ($furniture['category_id'] ?? 0) == $cat['id'] ? 'selected' : '' ?>>
-                        <?= e($cat['icon']) ?> <?= e($cat['name']) ?>
-                    </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label for="price">Price</label>
-                <input type="number" id="price" name="price" min="0" value="<?= $furniture['price'] ?? 250 ?>">
-                <p class="form-help">Default is $250 (most common price in-game)</p>
-            </div>
-            
-            <div class="form-group">
-                <label for="image_url">Image URL</label>
-                <input type="text" id="image_url" name="image_url" 
-                       value="<?= e($furniture['image_url'] ?? '') ?>"
-                       placeholder="https://... or /images/...">
-                <p class="form-help">URL to an image of the furniture (will be processed and converted)</p>
-            </div>
-            
-            <?php if ($isEdit): ?>
-            <div class="form-group">
-                <label for="edit_notes">Edit Notes (optional)</label>
-                <textarea id="edit_notes" name="edit_notes" rows="3" 
-                          placeholder="Explain what you're changing and why..."></textarea>
-            </div>
-            <?php endif; ?>
-            
-            <div class="form-actions">
-                <button type="submit" class="btn btn-primary"><?= $isEdit ? 'Submit Edit' : 'Submit Furniture' ?></button>
-                <a href="/dashboard/?page=submissions" class="btn">Cancel</a>
-            </div>
-        </div>
-        
-        <!-- Right Column: Tags -->
-        <div class="form-column-right">
-            <label class="tags-column-label">Tags</label>
-            
-            <?php 
-            $itemTagIds = $furniture ? array_column($furniture['tags'] ?? [], 'id') : [];
-            foreach ($tagsGrouped['groups'] as $group): 
-            ?>
-            <?php if (!empty($group['tags'])): ?>
-            <div class="tag-group-section">
-                <h4>
-                    <span class="group-color-dot" style="background: <?= e($group['color']) ?>"></span>
-                    <?= e($group['name']) ?>
-                </h4>
-                <div class="checkbox-group">
-                    <?php foreach ($group['tags'] as $tag): ?>
-                    <label class="checkbox-item <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>">
-                        <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>" 
-                               <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>>
-                        <span><?= e($tag['name']) ?></span>
-                    </label>
-                    <?php endforeach; ?>
+        <div class="form-layout">
+            <!-- Left Column: Form Container -->
+            <div class="form-layout-main">
+                <div class="form-group">
+                    <label for="name">Furniture Name *</label>
+                    <input type="text" id="name" name="name" required maxlength="255" 
+                           value="<?= e($furniture['name'] ?? '') ?>"
+                           placeholder="e.g., Black Double Bed">
+                    <p class="form-help">The exact prop name used in-game</p>
                 </div>
+                
+                <div class="form-group">
+                    <label for="price">Price</label>
+                    <input type="number" id="price" name="price" min="0" value="<?= $furniture['price'] ?? 250 ?>">
+                    <p class="form-help">Default is $250 (most common price in-game)</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="image_url">Image URL</label>
+                    <input type="text" id="image_url" name="image_url" 
+                           value="<?= e($furniture['image_url'] ?? '') ?>"
+                           placeholder="https://... or /images/...">
+                    <p class="form-help">URL to an image of the furniture (will be processed and converted)</p>
+                    <div class="image-preview" id="image-preview">
+                        <img src="<?= e($furniture['image_url'] ?? '/images/placeholder.svg') ?>" 
+                             alt="Preview" id="preview-img" 
+                             onerror="this.src='/images/placeholder.svg'">
+                    </div>
+                </div>
+                
+                <?php if ($isEdit): ?>
+                <div class="form-group">
+                    <label for="edit_notes">Edit Notes (optional)</label>
+                    <textarea id="edit_notes" name="edit_notes" rows="3" 
+                              placeholder="Explain what you're changing and why..."></textarea>
+                </div>
+                <?php endif; ?>
+                
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary"><?= $isEdit ? 'Submit Edit' : 'Submit Furniture' ?></button>
+                    <a href="/dashboard/?page=submissions" class="btn">Cancel</a>
+                </div>
+                
+                <!-- Duplicate Detection Panel (in left column, below form) -->
+                <aside id="duplicate-panel" 
+                       class="duplicate-panel hidden"
+                       data-exclude-id="<?= $furnitureId ?? '' ?>">
+                    <!-- Populated by JavaScript -->
+                </aside>
             </div>
-            <?php endif; ?>
-            <?php endforeach; ?>
+            
+            <!-- Right Column: Sidebar with separate panels -->
+            <div class="form-layout-sidebar">
+                <!-- Categories Panel (styled like tags) -->
+                <section class="tags-panel categories-panel">
+                    <h3 class="tags-panel-header">Categories * <small style="font-weight: normal; opacity: 0.7;">(first selected = primary)</small></h3>
+                    <div class="tag-group-section">
+                        <div class="checkbox-group">
+                            <?php foreach ($categories as $cat): ?>
+                            <?php $isChecked = in_array($cat['id'], $itemCategoryIds); ?>
+                            <label class="checkbox-item <?= $isChecked ? 'checked' : '' ?>">
+                                <input type="checkbox" name="category_ids[]" value="<?= $cat['id'] ?>" <?= $isChecked ? 'checked' : '' ?>>
+                                <span><?= e($cat['icon']) ?> <?= e($cat['name']) ?></span>
+                            </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- Tags Panel -->
+                <section class="tags-panel">
+                    <h3 class="tags-panel-header">Tags</h3>
+                    
+                    <?php 
+                    $itemTagIds = $furniture ? array_column($furniture['tags'] ?? [], 'id') : [];
+                    foreach ($tagsGrouped['groups'] as $group): 
+                    ?>
+                    <?php if (!empty($group['tags'])): ?>
+                    <div class="tag-group-section">
+                        <h4>
+                            <span class="group-color-dot" style="background: <?= e($group['color']) ?>"></span>
+                            <?= e($group['name']) ?>
+                        </h4>
+                        <div class="checkbox-group">
+                            <?php foreach ($group['tags'] as $tag): ?>
+                            <label class="checkbox-item <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>">
+                                <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>" 
+                                       <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>>
+                                <span><?= e($tag['name']) ?></span>
+                            </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                    <?php endforeach; ?>
+                </section>
+            </div>
         </div>
     </form>
     <?php
@@ -613,7 +727,13 @@ function renderSubmissionView(PDO $pdo, int $userId, int $id): void
     }
     
     $data = $submission['data'];
-    $category = getCategoryById($pdo, $data['category_id'] ?? 0);
+    // Handle both old (category_id) and new (category_ids) format
+    $submittedCategoryIds = $data['category_ids'] ?? (isset($data['category_id']) ? [$data['category_id']] : []);
+    $submittedCategories = [];
+    foreach ($submittedCategoryIds as $catId) {
+        $cat = getCategoryById($pdo, (int)$catId);
+        if ($cat) $submittedCategories[] = $cat;
+    }
     ?>
     <div class="admin-header">
         <h1>📝 Submission Details</h1>
@@ -657,8 +777,16 @@ function renderSubmissionView(PDO $pdo, int $userId, int $id): void
         </div>
         
         <div class="form-group">
-            <label>Category</label>
-            <p><?= $category ? e($category['icon'] . ' ' . $category['name']) : '-' ?></p>
+            <label>Categories</label>
+            <p>
+                <?php if (!empty($submittedCategories)): ?>
+                    <?php foreach ($submittedCategories as $cat): ?>
+                        <?= e($cat['icon'] . ' ' . $cat['name']) ?><?= $cat !== end($submittedCategories) ? ', ' : '' ?>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    -
+                <?php endif; ?>
+            </p>
         </div>
         
         <div class="form-group">
