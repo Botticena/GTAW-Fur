@@ -17,6 +17,7 @@ access.log
 # Database backups and dumps
 backups/
 database_backups/
+migrations/
 
 # PHP
 vendor/
@@ -29,6 +30,9 @@ composer.phar
 
 # Test files with sensitive data
 test_*.php
+tests/
+phpunit.xml
+.github/workflows/php-tests.yml
 
 # User uploaded/processed images
 images/furniture/*.webp
