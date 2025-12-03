@@ -37,10 +37,13 @@ declare(strict_types=1);
         <button class="lightbox-nav prev" aria-label="Previous image" title="Previous (←)">‹</button>
         <button class="lightbox-nav next" aria-label="Next image" title="Next (→)">›</button>
         <div class="lightbox-content">
-            <img src="" alt="" id="lightbox-image">
-            <div class="lightbox-info">
+            <div class="lightbox-image-container">
+                <img src="" alt="" id="lightbox-image">
+            </div>
+            <div class="lightbox-info-card">
                 <h3 id="lightbox-title"></h3>
                 <p class="meta" id="lightbox-meta"></p>
+                <div class="lightbox-tags" id="lightbox-tags" style="display: none;"></div>
                 <div class="lightbox-actions">
                     <div class="lightbox-actions-row lightbox-actions-primary">
                         <button class="btn-copy" id="lightbox-copy" title="Copy /sf command">
@@ -78,6 +81,7 @@ declare(strict_types=1);
     <?php endif; ?>
     
     <!-- Main Application Script -->
+    <script src="/js/common.js"></script>
     <script src="/js/app.js"></script>
 </body>
 </html>
