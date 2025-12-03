@@ -13,14 +13,10 @@ const Dashboard = {
     },
 
     /**
-     * Get CSRF token from meta tag or hidden input
+     * Get CSRF token from shared helper
      */
     getCsrfToken() {
-        const meta = document.querySelector('meta[name="csrf-token"]');
-        if (meta) return meta.content;
-        const input = document.querySelector('input[name="csrf_token"]');
-        if (input) return input.value;
-        return null;
+        return window.GTAW ? window.GTAW.getCsrfToken() : null;
     },
 
     /**
@@ -31,6 +27,15 @@ const Dashboard = {
         this.initThemeToggle();
         this.initForms();
         this.initCollectionReordering();
+        this.recentlyViewed.init();
+        
+        window.GTAW.tableSearch.init();
+        window.GTAW.imagePreview.init();
+        window.GTAW.duplicateDetection.init({
+            editLinkPrefix: '/dashboard/?page=submissions&action=new&furniture_id=',
+            editLinkText: 'Suggest Edit',
+            hintText: 'Consider suggesting an edit instead of creating a duplicate.'
+        });
     },
 
     /**
@@ -57,19 +62,16 @@ const Dashboard = {
     },
 
     /**
-     * Initialize theme toggle - same as admin
+     * Initialize theme toggle
+     * Delegates to shared GTAW.toggleTheme() for consistent behavior
      */
     initThemeToggle() {
         const toggle = document.getElementById('theme-toggle');
         if (!toggle) return;
 
         toggle.addEventListener('click', () => {
-            const html = document.documentElement;
-            const currentTheme = html.getAttribute('data-theme') || 'dark';
-            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            
-            html.setAttribute('data-theme', newTheme);
-            localStorage.setItem('gtaw_theme', newTheme);
+            // Use shared utility (no toast on dashboard to match original behavior)
+            window.GTAW.toggleTheme(false);
         });
     },
 
@@ -86,7 +88,6 @@ const Dashboard = {
                 const formData = new FormData(form);
                 const submitBtn = form.querySelector('button[type="submit"]');
                 
-                // Disable submit button
                 if (submitBtn) {
                     submitBtn.disabled = true;
                     submitBtn.textContent = 'Saving...';
@@ -101,14 +102,14 @@ const Dashboard = {
                     const result = await response.json();
                     
                     if (result.success) {
-                        this.showToast(result.message || 'Saved successfully', 'success');
+                        this.toast(result.message || 'Saved successfully', 'success');
                         if (redirect) {
                             setTimeout(() => {
                                 window.location.href = redirect;
                             }, 500);
                         }
                     } else {
-                        this.showToast(result.error || 'An error occurred', 'error');
+                        this.toast(result.error || 'An error occurred', 'error');
                         if (submitBtn) {
                             submitBtn.disabled = false;
                             submitBtn.textContent = submitBtn.dataset.originalText || 'Save';
@@ -116,7 +117,7 @@ const Dashboard = {
                     }
                 } catch (error) {
                     console.error('Form submission error:', error);
-                    this.showToast('Network error. Please try again.', 'error');
+                    this.toast('Network error. Please try again.', 'error');
                     if (submitBtn) {
                         submitBtn.disabled = false;
                         submitBtn.textContent = submitBtn.dataset.originalText || 'Save';
@@ -134,21 +135,10 @@ const Dashboard = {
 
     /**
      * Copy furniture command
+     * Delegates to shared GTAW.copyCommand() for consistent behavior
      */
     copyCommand(name) {
-        const command = `/sf ${name}`;
-        navigator.clipboard.writeText(command).then(() => {
-            this.showToast('Copied: ' + command, 'success');
-        }).catch(() => {
-            // Fallback
-            const input = document.createElement('input');
-            input.value = command;
-            document.body.appendChild(input);
-            input.select();
-            document.execCommand('copy');
-            document.body.removeChild(input);
-            this.showToast('Copied: ' + command, 'success');
-        });
+        window.GTAW.copyCommand(name);
     },
 
     /**
@@ -179,13 +169,13 @@ const Dashboard = {
                 if (row) {
                     row.remove();
                 }
-                this.showToast('Removed from favorites', 'success');
+                this.toast('Removed from favorites', 'success');
             } else {
-                this.showToast(result.error || 'Failed to remove', 'error');
+                this.toast(result.error || 'Failed to remove', 'error');
             }
         } catch (error) {
             console.error('Remove favorite error:', error);
-            this.showToast('Network error', 'error');
+            this.toast('Network error', 'error');
         }
     },
 
@@ -198,7 +188,7 @@ const Dashboard = {
             const result = await response.json();
             
             if (!result.success || !result.data.length) {
-                this.showToast('No favorites to export', 'info');
+                this.toast('No favorites to export', 'info');
                 return;
             }
             
@@ -213,111 +203,55 @@ const Dashboard = {
             a.click();
             URL.revokeObjectURL(url);
             
-            this.showToast('Exported ' + result.data.length + ' items', 'success');
+            this.toast('Exported ' + result.data.length + ' items', 'success');
         } catch (error) {
             console.error('Export error:', error);
-            this.showToast('Export failed', 'error');
+            this.toast('Export failed', 'error');
         }
     },
 
     /**
-     * Open collection picker modal
+     * Clear all favorites with confirmation
      */
-    async addToCollection(furnitureId) {
-        this.state.currentFurnitureId = furnitureId;
-        
-        // Fetch user's collections
-        try {
-            const response = await fetch('/dashboard/api.php?action=collections');
-            const result = await response.json();
-            
-            if (!result.success) {
-                this.showToast(result.error || 'Failed to load collections', 'error');
-                return;
-            }
-            
-            const collections = result.data;
-            let modalBody;
-            
-            if (collections.length === 0) {
-                modalBody = `
-                    <p style="margin-bottom: var(--spacing-md);">You haven't created any collections yet.</p>
-                    <a href="/dashboard/?page=collections&action=add" class="btn btn-primary">Create Collection</a>
-                `;
-            } else {
-                // Check which collections contain this item
-                const containsResponse = await fetch(`/dashboard/api.php?action=collections/contains&furniture_id=${furnitureId}`);
-                const containsResult = await containsResponse.json();
-                const containsIds = containsResult.success ? containsResult.data : [];
-                
-                modalBody = `
-                    <div style="display: flex; flex-direction: column; gap: var(--spacing-sm);">
-                        ${collections.map(col => `
-                            <button onclick="Dashboard.toggleCollectionItem(${col.id})" 
-                                    class="btn ${containsIds.includes(col.id) ? 'btn-primary' : ''}"
-                                    style="justify-content: space-between; width: 100%;"
-                                    data-collection-id="${col.id}">
-                                <span>${this.escapeHtml(col.name)}</span>
-                                <span style="opacity: 0.7; font-size: 0.875rem;">${containsIds.includes(col.id) ? '✓ Added' : col.item_count + ' items'}</span>
-                            </button>
-                        `).join('')}
-                    </div>
-                    <div style="margin-top: var(--spacing-lg); padding-top: var(--spacing-md); border-top: 1px solid var(--border-color);">
-                        <a href="/dashboard/?page=collections&action=add" class="btn btn-sm">+ New Collection</a>
-                    </div>
-                `;
-            }
-            
-            // Create or update modal
-            this.showModal('Add to Collection', modalBody);
-        } catch (error) {
-            console.error('Load collections error:', error);
-            this.showToast('Failed to load collections', 'error');
+    async clearAllFavorites(count) {
+        if (count === 0) {
+            this.toast('No favorites to clear', 'info');
+            return;
         }
-    },
-
-    /**
-     * Toggle item in collection
-     */
-    async toggleCollectionItem(collectionId) {
-        const furnitureId = this.state.currentFurnitureId;
-        if (!furnitureId) return;
         
-        const button = document.querySelector(`button[data-collection-id="${collectionId}"]`);
-        const isInCollection = button.classList.contains('btn-primary');
+        if (!confirm(`Remove ALL ${count} favorites? This cannot be undone.`)) {
+            return;
+        }
         
-        const csrfToken = this.getCsrfToken();
         try {
-            const action = isInCollection ? 'collections/remove-item' : 'collections/add-item';
-            const response = await fetch(`/dashboard/api.php?action=${action}`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': csrfToken || ''
-                },
-                body: JSON.stringify({
-                    collection_id: collectionId,
-                    furniture_id: furnitureId,
-                    csrf_token: csrfToken
-                }),
+            const response = await fetch('/api.php?action=favorites/clear', {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRF-Token': this.getCsrfToken()
+                }
             });
             
             const result = await response.json();
             
             if (result.success) {
-                button.classList.toggle('btn-primary');
-                const span = button.querySelector('span:last-child');
-                if (span) {
-                    span.textContent = isInCollection ? 'Add' : '✓ Added';
-                }
-                this.showToast(isInCollection ? 'Removed from collection' : 'Added to collection', 'success');
+                this.toast(`Cleared ${result.data.count} favorites`, 'success');
+                // Reload page to show empty state
+                window.location.reload();
             } else {
-                this.showToast(result.error || 'Failed to update collection', 'error');
+                this.toast(result.error || 'Failed to clear favorites', 'error');
             }
         } catch (error) {
-            console.error('Toggle collection error:', error);
-            this.showToast('Network error', 'error');
+            console.error('Clear favorites error:', error);
+            this.toast('Network error', 'error');
         }
+    },
+
+    /**
+     * Open collection picker modal
+     * Delegates to shared GTAW.collectionPicker module
+     */
+    addToCollection(furnitureId) {
+        window.GTAW.collectionPicker.open(furnitureId);
     },
 
     /**
@@ -343,13 +277,13 @@ const Dashboard = {
             if (result.success) {
                 const row = document.querySelector(`tr[data-id="${id}"]`);
                 if (row) row.remove();
-                this.showToast('Collection deleted', 'success');
+                this.toast('Collection deleted', 'success');
             } else {
-                this.showToast(result.error || 'Failed to delete', 'error');
+                this.toast(result.error || 'Failed to delete', 'error');
             }
         } catch (error) {
             console.error('Delete collection error:', error);
-            this.showToast('Network error', 'error');
+            this.toast('Network error', 'error');
         }
     },
 
@@ -361,11 +295,44 @@ const Dashboard = {
         const url = `${window.location.origin}/collection.php?user=${encodeURIComponent(username)}&slug=${encodeURIComponent(slug)}`;
         
         navigator.clipboard.writeText(url).then(() => {
-            this.showToast('Collection link copied!', 'success');
+                this.toast('Collection link copied!', 'success');
         }).catch(() => {
             // Fallback
             prompt('Share this link:', url);
         });
+    },
+
+    /**
+     * Duplicate a collection
+     */
+    async duplicateCollection(id, name) {
+        if (!confirm(`Create a copy of "${name}"?`)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/dashboard/api.php?action=collections/duplicate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': this.getCsrfToken()
+                },
+                body: JSON.stringify({ collection_id: id })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.toast(`Collection duplicated: ${result.data.name}`, 'success');
+                // Redirect to edit the new collection
+                window.location.href = `/dashboard/?page=collections&action=edit&id=${result.data.id}`;
+            } else {
+                this.toast(result.error || 'Failed to duplicate collection', 'error');
+            }
+        } catch (error) {
+            console.error('Duplicate collection error:', error);
+            this.toast('Network error', 'error');
+        }
     },
 
     /**
@@ -377,7 +344,7 @@ const Dashboard = {
             const result = await response.json();
             
             if (!result.success || !result.data.length) {
-                this.showToast('No items in collection to export', 'info');
+            this.toast('No items in collection to export', 'info');
                 return;
             }
             
@@ -391,10 +358,10 @@ const Dashboard = {
             a.click();
             URL.revokeObjectURL(url);
             
-            this.showToast('Exported ' + result.data.length + ' items', 'success');
+            this.toast('Exported ' + result.data.length + ' items', 'success');
         } catch (error) {
             console.error('Export error:', error);
-            this.showToast('Export failed', 'error');
+            this.toast('Export failed', 'error');
         }
     },
 
@@ -424,13 +391,13 @@ const Dashboard = {
             if (result.success) {
                 const row = document.querySelector(`tr[data-id="${furnitureId}"]`);
                 if (row) row.remove();
-                this.showToast('Removed from collection', 'success');
+                this.toast('Removed from collection', 'success');
             } else {
-                this.showToast(result.error || 'Failed to remove', 'error');
+                this.toast(result.error || 'Failed to remove', 'error');
             }
         } catch (error) {
             console.error('Remove from collection error:', error);
-            this.showToast('Network error', 'error');
+            this.toast('Network error', 'error');
         }
     },
 
@@ -455,14 +422,14 @@ const Dashboard = {
             const result = await response.json();
             
             if (result.success) {
-                this.showToast('Submission cancelled', 'success');
+                this.toast('Submission cancelled', 'success');
                 window.location.href = '/dashboard/?page=submissions';
             } else {
-                this.showToast(result.error || 'Failed to cancel', 'error');
+                this.toast(result.error || 'Failed to cancel', 'error');
             }
         } catch (error) {
             console.error('Cancel submission error:', error);
-            this.showToast('Network error', 'error');
+            this.toast('Network error', 'error');
         }
     },
 
@@ -470,60 +437,29 @@ const Dashboard = {
      * Show modal - uses admin styling
      */
     showModal(title, content) {
-        // Remove existing modal if any
-        const existing = document.getElementById('dashboard-modal');
-        if (existing) existing.remove();
-        
-        const modal = document.createElement('div');
-        modal.id = 'dashboard-modal';
-        modal.className = 'modal-overlay active';
-        modal.innerHTML = `
-            <div class="modal">
-                <div class="modal-header">
-                    <h2>${this.escapeHtml(title)}</h2>
-                    <button class="modal-close" onclick="Dashboard.closeModal()">&times;</button>
-                </div>
-                <div class="modal-body">
-                    ${content}
-                </div>
-            </div>
-        `;
-        
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                this.closeModal();
-            }
-        });
-        
-        document.body.appendChild(modal);
+        if (window.GTAW) {
+            window.GTAW.showModal('dashboard-modal', title, content, () => {
+                this.state.currentFurnitureId = null;
+            });
+        }
     },
 
     /**
      * Close modal
      */
     closeModal() {
-        const modal = document.getElementById('dashboard-modal');
-        if (modal) modal.remove();
+        if (window.GTAW) {
+            window.GTAW.closeModal('dashboard-modal');
+        }
         this.state.currentFurnitureId = null;
     },
 
     /**
-     * Show toast notification - same as admin
+     * Show toast notification
+     * Delegates to shared GTAW.toast() for consistent behavior
      */
-    showToast(message, type = 'success') {
-        const container = document.getElementById('toast-container');
-        if (!container) return;
-        
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        toast.textContent = message;
-        
-        container.appendChild(toast);
-        
-        setTimeout(() => {
-            toast.classList.add('hiding');
-            setTimeout(() => toast.remove(), 300);
-        }, 3000);
+    toast(message, type = 'success') {
+        window.GTAW.toast(message, type);
     },
 
     /**
@@ -638,13 +574,100 @@ const Dashboard = {
             const result = await response.json();
             
             if (result.success) {
-                this.showToast('Items reordered successfully');
+                this.toast('Items reordered successfully');
             } else {
-                this.showToast(result.error || 'Failed to reorder items', 'error');
+                this.toast(result.error || 'Failed to reorder items', 'error');
             }
         } catch (error) {
             console.error('Error reordering items:', error);
-            this.showToast('Failed to reorder items', 'error');
+            this.toast('Failed to reorder items', 'error');
+        }
+    },
+
+    // =========================================
+    // RECENTLY VIEWED MODULE
+    // =========================================
+    
+    /**
+     * Recently Viewed Module
+     * Displays recently viewed furniture items on the overview page
+     */
+    recentlyViewed: {
+        section: null,
+        grid: null,
+        storageKey: 'gtaw_recently_viewed',
+        maxDisplay: 15,
+        
+        /**
+         * Initialize recently viewed section
+         */
+        init() {
+            this.section = document.getElementById('recently-viewed-section');
+            this.grid = document.getElementById('recently-viewed-grid');
+            
+            if (!this.section || !this.grid) return;
+            
+            this.load();
+        },
+        
+        /**
+         * Load and display recently viewed items
+         */
+        async load() {
+            const ids = this.getIds();
+            
+            if (ids.length === 0) return;
+            
+            // Limit to maxDisplay items
+            const displayIds = ids.slice(0, this.maxDisplay);
+            
+            try {
+                const response = await fetch(`/api.php?action=furniture/batch&ids=${displayIds.join(',')}`);
+                const result = await response.json();
+                
+                if (result.success && result.data.length > 0) {
+                    this.render(result.data);
+                }
+            } catch (error) {
+                console.error('Failed to load recently viewed:', error);
+            }
+        },
+        
+        /**
+         * Get recently viewed IDs from localStorage
+         */
+        getIds() {
+            try {
+                return JSON.parse(localStorage.getItem(this.storageKey) || '[]');
+            } catch {
+                return [];
+            }
+        },
+        
+        /**
+         * Render recently viewed items
+         */
+        render(items) {
+            const escapeHtml = window.GTAW?.escapeHtml || (t => String(t ?? ''));
+            
+            const html = items.map(item => `
+                <a href="/?furniture=${item.id}" class="recently-viewed-item">
+                    <img src="${item.image_url || '/images/placeholder.svg'}" 
+                         alt="" 
+                         onerror="this.src='/images/placeholder.svg'">
+                    <div class="recently-viewed-item-info">
+                        <div class="recently-viewed-item-name" title="${escapeHtml(item.name)}">
+                            ${escapeHtml(item.name)}
+                        </div>
+                        <div class="recently-viewed-item-meta">
+                            ${escapeHtml(item.categories?.[0]?.name || item.category_name || '')} • $${Number(item.price).toLocaleString()}
+                        </div>
+                    </div>
+                </a>
+            `).join('');
+            
+            this.grid.innerHTML = html;
+            this.section.style.display = 'block';
         }
     },
 
@@ -652,11 +675,8 @@ const Dashboard = {
      * Escape HTML
      */
     escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return window.GTAW ? window.GTAW.escapeHtml(text) : String(text ?? '');
     },
 };
 
-// Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => Dashboard.init());
