@@ -12,6 +12,7 @@ declare(strict_types=1);
     <div id="toast-container" class="toast-container" aria-live="polite"></div>
     
     <!-- Admin JavaScript -->
+    <script src="/js/common.js"></script>
     <script src="/js/admin.js"></script>
 </body>
 </html>
