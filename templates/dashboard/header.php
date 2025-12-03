@@ -28,8 +28,8 @@ $pageTitle = isset($pageTitle) ? "{$pageTitle} - Dashboard" : "Dashboard - {$app
     <!-- Pico CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
     
-    <!-- Custom Styles - Use admin.css for consistency -->
-    <link rel="stylesheet" href="/css/style.css">
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="/css/base.css">
     <link rel="stylesheet" href="/css/admin.css">
     
     <!-- Favicon -->
