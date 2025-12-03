@@ -285,14 +285,21 @@ function renderDashboard(PDO $pdo): void
 
 function renderFurnitureList(PDO $pdo): void
 {
-    $currentPage = max(1, getQueryInt('p', 1));
+    $currentPage    = max(1, getQueryInt('p', 1));
     $categoryFilter = getQuery('category', null);
-    $categories = getCategories($pdo);
-    
-    $result = getFurnitureList($pdo, $currentPage, 50, $categoryFilter);
-    $items = $result['items'];
+    $search         = trim((string) getQuery('q', ''));
+    $categories     = getCategories($pdo);
+
+    if ($search !== '') {
+        // Admin search across all furniture using server-side search
+        $result = searchFurniture($pdo, $search, $currentPage, 50, null, true);
+    } else {
+        $result = getFurnitureList($pdo, $currentPage, 50, $categoryFilter);
+    }
+
+    $items      = $result['items'];
     $pagination = $result['pagination'];
-    $csrfToken = generateCsrfToken();
+    $csrfToken  = generateCsrfToken();
     ?>
     <div class="admin-header">
         <h1>🪑 Furniture</h1>
@@ -302,14 +309,16 @@ function renderFurnitureList(PDO $pdo): void
     </div>
     
     <!-- Filter Bar: Search + Category -->
-    <div class="table-filter-bar">
-        <input type="search" 
-               class="table-search-input" 
-               data-table="furniture-table"
-               placeholder="🔍 Search furniture..."
-               aria-label="Search furniture">
+    <form class="table-filter-bar" method="get">
+        <input type="hidden" name="page" value="furniture">
+        <input
+            type="search"
+            name="q"
+            value="<?= e($search) ?>"
+            placeholder="🔍 Search furniture..."
+            aria-label="Search furniture">
         <div class="filter-buttons">
-            <select onchange="window.location.href='/admin/?page=furniture' + (this.value ? '&category=' + this.value : '')">
+            <select name="category" onchange="this.form.submit()">
                 <option value="">All Categories</option>
                 <?php foreach ($categories as $cat): ?>
                 <option value="<?= e($cat['slug']) ?>" <?= $categoryFilter === $cat['slug'] ? 'selected' : '' ?>>
@@ -317,11 +326,11 @@ function renderFurnitureList(PDO $pdo): void
                 </option>
                 <?php endforeach; ?>
             </select>
-            <?php if ($categoryFilter): ?>
+            <?php if ($categoryFilter || $search !== ''): ?>
             <a href="/admin/?page=furniture" class="btn btn-sm">✕ Clear</a>
             <?php endif; ?>
         </div>
-    </div>
+    </form>
     
     <?php if (empty($items)): ?>
     <div class="data-table-container">
@@ -390,7 +399,13 @@ function renderFurnitureList(PDO $pdo): void
     </div>
     
     <?php 
-    $paginationUrl = '/admin/?page=furniture' . ($categoryFilter ? '&category=' . urlencode($categoryFilter) : '');
+    $paginationUrl = '/admin/?page=furniture';
+    if ($categoryFilter) {
+        $paginationUrl .= '&category=' . urlencode($categoryFilter);
+    }
+    if ($search !== '') {
+        $paginationUrl .= '&q=' . urlencode($search);
+    }
     echo renderPaginationHtml($pagination, $paginationUrl, 'p'); 
     ?>
     <?php endif; ?>
