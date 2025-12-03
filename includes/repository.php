@@ -13,7 +13,6 @@ if (basename($_SERVER['PHP_SELF']) === 'repository.php') {
     exit('Direct access forbidden');
 }
 
-// Load utility functions
 require_once __DIR__ . '/utils.php';
 
 /**
@@ -30,15 +29,15 @@ abstract class Repository
     {
         $this->pdo = $pdo;
         
-        // Validate table name contains only safe characters (SQL identifier rules)
-        // Must start with letter or underscore, followed by letters, digits, or underscores
+        // Validate table name to prevent SQL injection
+        // Only allows alphanumeric and underscore, starting with letter/underscore
         if (!preg_match('/^[a-z_][a-z0-9_]*$/i', $this->table)) {
             throw new InvalidArgumentException(
                 "Invalid table name '{$this->table}'. Table names must contain only alphanumeric characters and underscores, and start with a letter or underscore."
             );
         }
         
-        // Validate primary key name contains only safe characters
+        // Validate primary key name (same rules as table names)
         if (!preg_match('/^[a-z_][a-z0-9_]*$/i', $this->primaryKey)) {
             throw new InvalidArgumentException(
                 "Invalid primary key name '{$this->primaryKey}'. Primary key names must contain only alphanumeric characters and underscores, and start with a letter or underscore."
@@ -245,12 +244,10 @@ class CategoryRepository extends Repository
     
     protected function beforeCreate(array $data): array
     {
-        // Generate slug if not provided
         if (!isset($data['slug']) && isset($data['name'])) {
             $data['slug'] = createSlug($data['name']);
         }
         
-        // Set defaults
         if (!isset($data['icon'])) {
             $data['icon'] = '📁';
         }
