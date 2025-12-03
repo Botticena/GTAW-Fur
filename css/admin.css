@@ -1,5 +1,8 @@
 /**
  * GTAW Furniture Catalog - Admin Panel Styles
+ * 
+ * NOTE: Base styles (custom properties, toasts, modals, buttons, badges)
+ * are now in base.css. Include base.css before this file.
  */
 
 /* ============================================
@@ -184,6 +187,59 @@
 }
 
 /* ============================================
+   TABLE FILTER BAR
+   ============================================ */
+.table-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+    align-items: center;
+    justify-content: space-between;
+}
+
+.table-filter-bar input[type="search"] {
+    width: 280px;
+    min-width: 200px;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.table-filter-bar input[type="search"]:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.table-filter-bar input[type="search"]::placeholder {
+    color: var(--text-muted);
+}
+
+.table-filter-bar .filter-buttons {
+    display: flex;
+    gap: var(--spacing-xs);
+    flex-wrap: wrap;
+}
+
+.table-filter-bar select {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    min-width: 150px;
+}
+
+.table-filter-bar select:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+/* ============================================
    DATA TABLES
    ============================================ */
 .data-table-container {
@@ -328,6 +384,7 @@
 .checkbox-item {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: var(--spacing-xs);
     padding: var(--spacing-xs) var(--spacing-sm);
     background: var(--bg-elevated);
@@ -335,195 +392,52 @@
     border-radius: var(--radius-sm);
     cursor: pointer;
     transition: all var(--transition-fast);
+    text-align: center;
+    position: relative;
 }
 
 .checkbox-item:hover {
     border-color: var(--primary);
+    background: var(--bg-primary);
 }
 
-.checkbox-item input {
-    width: auto;
+/* Hide the checkbox input, style as button */
+.checkbox-item input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
 }
 
-.checkbox-item.checked {
+.checkbox-item.checked,
+.checkbox-item:has(input:checked) {
     background: var(--primary);
     border-color: var(--primary);
     color: white;
 }
 
-/* ============================================
-   BUTTONS
-   ============================================ */
-.btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-sm);
-    padding: 0 var(--spacing-lg);
-    height: 38px;
+/* Categories Panel - uses tags-panel class, just needs scrollable height */
+.categories-panel.tags-panel {
+    max-height: 40vh;
+}
+
+/* Category overflow indicator in tables */
+.category-overflow {
+    display: inline-block;
+    padding: 2px 6px;
+    margin-left: 4px;
     background: var(--bg-elevated);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    text-decoration: none;
-    transition: all var(--transition-fast);
-    box-sizing: border-box;
-    line-height: 1;
-}
-
-.btn:hover {
-    border-color: var(--primary);
-    color: var(--primary);
-}
-
-.btn:active {
-    transform: scale(0.98);
-}
-
-.btn-primary {
-    background: var(--primary);
-    border-color: var(--primary);
-    color: white;
-}
-
-.btn-primary:hover {
-    background: var(--primary-hover);
-    border-color: var(--primary-hover);
-    color: white;
-}
-
-.btn-danger {
-    background: var(--error);
-    border-color: var(--error);
-    color: white;
-}
-
-.btn-danger:hover {
-    background: #dc2626;
-    border-color: #dc2626;
-    color: white;
-}
-
-.btn-success {
-    background: var(--success);
-    border-color: var(--success);
-    color: white;
-}
-
-.btn-success:hover {
-    background: #16a34a;
-    border-color: #16a34a;
-    color: white;
-}
-
-.btn-sm {
-    padding: 0 var(--spacing-sm);
-    height: 30px;
+    border-radius: var(--radius-full);
     font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: help;
 }
 
-.btn-lg {
-    padding: 0 var(--spacing-xl);
-    height: 44px;
-    font-size: 1rem;
-}
-
-/* ============================================
-   ALERTS
-   ============================================ */
-.alert {
-    padding: var(--spacing-md) var(--spacing-lg);
-    border-radius: var(--radius-md);
-    margin-bottom: var(--spacing-lg);
-    border: 1px solid;
-}
-
-.alert-success {
-    background: var(--success-bg);
-    border-color: var(--success);
-    color: var(--success);
-}
-
-.alert-error {
-    background: var(--error-bg);
-    border-color: var(--error);
-    color: var(--error);
-}
-
-.alert-info {
-    background: rgba(59, 130, 246, 0.1);
-    border-color: var(--info);
-    color: var(--info);
-}
-
-/* ============================================
-   MODAL
-   ============================================ */
-.modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.8);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: var(--spacing-lg);
-}
-
-.modal-overlay.active {
-    display: flex;
-}
-
-.modal {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    width: 100%;
-    max-width: 500px;
-    max-height: 90vh;
-    overflow-y: auto;
-}
-
-.modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--spacing-lg);
-    border-bottom: 1px solid var(--border-color);
-}
-
-.modal-header h2 {
-    margin: 0;
-    font-size: 1.25rem;
-}
-
-.modal-close {
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 0;
-    line-height: 1;
-}
-
-.modal-close:hover {
-    color: var(--text-primary);
-}
-
-.modal-body {
-    padding: var(--spacing-lg);
-}
-
-.modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-lg);
-    border-top: 1px solid var(--border-color);
+/* Duplicate panel in left column */
+.form-layout-main .duplicate-panel {
+    margin-top: var(--spacing-lg);
 }
 
 /* ============================================
@@ -562,37 +476,7 @@
     color: var(--text-secondary);
 }
 
-/* ============================================
-   BADGE
-   ============================================ */
-.badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2px 8px;
-    border-radius: var(--radius-full);
-    font-size: 0.7rem;
-    font-weight: 500;
-    white-space: nowrap;
-    line-height: 1.4;
-}
-
-.badge-success {
-    background: var(--success-bg);
-    color: var(--success);
-}
-
-.badge-error {
-    background: var(--error-bg);
-    color: var(--error);
-}
-
-.badge-warning {
-    background: rgba(234, 179, 8, 0.1);
-    color: var(--warning);
-}
-
-/* Tag badge in tables */
+/* Tag badge in tables - extends base badge styles */
 .data-table .badge {
     margin: 1px;
 }
@@ -752,71 +636,6 @@
 }
 
 /* ============================================
-   TOAST CONTAINER (ADMIN)
-   ============================================ */
-.toast-container {
-    position: fixed;
-    bottom: var(--spacing-xl);
-    right: var(--spacing-xl);
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-}
-
-.toast {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-md);
-    padding: var(--spacing-md) var(--spacing-lg);
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-lg);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    animation: slideIn 0.3s ease;
-    max-width: 350px;
-}
-
-.toast.success {
-    border-left: 4px solid var(--success);
-}
-
-.toast.error {
-    border-left: 4px solid var(--error);
-}
-
-.toast.info {
-    border-left: 4px solid var(--info);
-}
-
-.toast.hiding {
-    animation: fadeOut 0.3s ease forwards;
-}
-
-@keyframes slideIn {
-    from {
-        transform: translateX(100%);
-        opacity: 0;
-    }
-    to {
-        transform: translateX(0);
-        opacity: 1;
-    }
-}
-
-@keyframes fadeOut {
-    from {
-        opacity: 1;
-    }
-    to {
-        opacity: 0;
-        transform: translateX(50%);
-    }
-}
-
-/* ============================================
    ANIMATIONS
    ============================================ */
 .admin-main {
@@ -841,6 +660,292 @@
 .stat-card:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-md);
+}
+
+/* ============================================
+   BULK ACTIONS BAR
+   ============================================ */
+.bulk-actions-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--primary);
+    color: white;
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-md);
+}
+
+.bulk-actions-bar span {
+    font-weight: 600;
+}
+
+.bulk-actions-buttons {
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.bulk-actions-bar .btn {
+    border-color: rgba(255,255,255,0.3);
+}
+
+.bulk-actions-bar .btn:hover {
+    border-color: white;
+}
+
+/* Checkbox styling in tables */
+.data-table input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--primary);
+}
+
+/* ============================================
+   RECENTLY VIEWED SECTION (Dashboard Overview)
+   ============================================ */
+.recently-viewed-section {
+    margin-top: var(--spacing-xl);
+    padding-top: var(--spacing-lg);
+    border-top: 1px solid var(--border-color);
+}
+
+.recently-viewed-section h2 {
+    margin-bottom: var(--spacing-md);
+}
+
+.recently-viewed-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: var(--spacing-md);
+}
+
+.recently-viewed-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    color: inherit;
+    transition: all var(--transition-fast);
+}
+
+.recently-viewed-item:hover {
+    border-color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+}
+
+.recently-viewed-item img {
+    width: 60px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+    background: var(--bg-surface);
+}
+
+.recently-viewed-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.recently-viewed-item-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 2px;
+}
+
+.recently-viewed-item-meta {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 600px) {
+    .recently-viewed-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ============================================
+   ADMIN ANALYTICS (Dashboard)
+   ============================================ */
+.dashboard-analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-xl);
+}
+
+.analytics-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+}
+
+.analytics-card h3 {
+    margin: 0 0 var(--spacing-md) 0;
+    font-size: 1rem;
+    color: var(--text-primary);
+}
+
+/* Popular Items List */
+.popular-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.popular-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    color: inherit;
+    transition: background var(--transition-fast);
+}
+
+.popular-item:hover {
+    background: var(--bg-surface);
+}
+
+.popular-item img {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.popular-item-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.popular-item-name {
+    font-weight: 500;
+    font-size: 0.875rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.popular-item-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.popular-item-count {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+}
+
+/* Category Stats List */
+.category-stats-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.category-stat {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-sm);
+    border-radius: var(--radius-sm);
+}
+
+.category-stat:hover {
+    background: var(--bg-surface);
+}
+
+.category-stat-name {
+    font-size: 0.875rem;
+}
+
+.category-stat-counts {
+    display: flex;
+    gap: var(--spacing-md);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.category-stat-favorites {
+    color: var(--primary);
+}
+
+@media (max-width: 768px) {
+    .dashboard-analytics-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ============================================
+   PAGINATION (Admin/Dashboard Tables)
+   ============================================ */
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-lg) 0;
+    margin-top: var(--spacing-md);
+}
+
+.pagination .btn {
+    min-width: auto;
+}
+
+.pagination .btn.disabled,
+.pagination .btn[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.pagination .page-info {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+/* ============================================
+   EMPTY STATE (Admin/Dashboard Tables)
+   ============================================ */
+.empty-state {
+    text-align: center;
+    padding: var(--spacing-xl) var(--spacing-lg);
+    color: var(--text-secondary);
+}
+
+.empty-state-icon {
+    font-size: 3rem;
+    margin-bottom: var(--spacing-md);
+    opacity: 0.7;
+}
+
+.empty-state h3 {
+    margin: 0 0 var(--spacing-sm);
+    font-size: 1.25rem;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.empty-state p {
+    margin: 0 0 var(--spacing-lg);
+    font-size: 0.875rem;
 }
 
 /* ============================================
@@ -916,7 +1021,85 @@
 
 /* ============================================
    TWO-COLUMN FORM LAYOUT
+   Creates two separate visual containers side by side
    ============================================ */
+
+/* Reset .admin-form styles when using split layout */
+.admin-form.form-split {
+    background: transparent;
+    border: none;
+    padding: 0;
+    max-width: none;
+    border-radius: 0;
+}
+
+/* Main layout grid - 65% / 35% split */
+.form-layout {
+    display: grid;
+    grid-template-columns: 65fr 35fr;
+    gap: var(--spacing-xl);
+    align-items: start;
+}
+
+/* Left column - Form fields container */
+.form-layout-main {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-xl);
+    min-width: 0; /* Allow shrinking in grid */
+}
+
+/* Right column - Sidebar with stacked panels */
+.form-layout-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    position: sticky;
+    top: var(--spacing-lg);
+    min-width: 280px;
+}
+
+/* Tags panel - separate card in sidebar */
+.tags-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.tags-panel-header {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0 0 var(--spacing-md) 0;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: var(--spacing-sm);
+}
+
+/* Duplicate panel in sidebar context */
+.form-layout-sidebar .duplicate-panel {
+    margin-bottom: 0;
+}
+
+/* Responsive: stack columns on smaller screens */
+@media (max-width: 900px) {
+    .form-layout {
+        grid-template-columns: 1fr;
+    }
+    
+    .form-layout-sidebar {
+        position: static;
+    }
+    
+    .tags-panel {
+        max-height: none;
+    }
+}
+
+/* Legacy support for existing two-column forms */
 .admin-form.two-column {
     display: grid !important;
     grid-template-columns: 1fr 1fr;
@@ -928,7 +1111,7 @@
 .admin-form.two-column .form-column-right {
     display: flex;
     flex-direction: column;
-    min-width: 0; /* Prevent grid blowout */
+    min-width: 0;
 }
 
 .admin-form.two-column .form-column-right {
@@ -1000,32 +1183,16 @@
     font-size: 0.75rem;
     padding: 4px 8px;
     margin: 0;
+    position: relative;
 }
 
+/* Checkbox hidden - styled as button */
 .admin-form .tag-group-section .checkbox-item input[type="checkbox"] {
-    width: 14px;
-    height: 14px;
-    margin: 0;
-}
-
-/* ============================================
-   IMAGE PREVIEW
-   ============================================ */
-.image-preview {
-    margin-top: var(--spacing-md);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-    background: var(--bg-elevated);
-    max-width: 200px;
-}
-
-.image-preview img {
-    display: block;
-    width: 100%;
-    height: auto;
-    aspect-ratio: 1;
-    object-fit: contain;
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
 }
 
 /* ============================================
@@ -1054,12 +1221,8 @@
 }
 
 /* ============================================
-   UTILITY CLASSES
+   ADMIN UTILITY CLASSES
    ============================================ */
-.text-muted {
-    color: var(--text-muted);
-}
-
 .color-preview {
     display: inline-block;
     width: 24px;
