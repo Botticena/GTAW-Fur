@@ -402,7 +402,10 @@ class CollectionRepository extends Repository
         }
         
         // Set defaults
-        if (!isset($data['is_public'])) {
+        if (array_key_exists('is_public', $data)) {
+            // Normalize to integer 0/1 to satisfy strict SQL modes
+            $data['is_public'] = $data['is_public'] ? 1 : 0;
+        } else {
             $data['is_public'] = 1;
         }
         
@@ -422,6 +425,11 @@ class CollectionRepository extends Repository
             if (!$existing || (int) $existing['id'] === $id) {
                 $data['slug'] = $newSlug;
             }
+        }
+
+        // Normalize is_public to integer 0/1 when present
+        if (array_key_exists('is_public', $data)) {
+            $data['is_public'] = $data['is_public'] ? 1 : 0;
         }
         
         return $data;
