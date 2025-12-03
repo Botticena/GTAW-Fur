@@ -303,6 +303,8 @@ function userOwnsSubmission(PDO $pdo, int $userId, int $submissionId): bool
 /**
  * Validate submission input
  * 
+ * Accepts either category_ids (array) or category_id (single) for backwards compatibility.
+ * 
  * @param array $input Input data to validate
  * @param string $type Submission type (SUBMISSION_TYPE_NEW or SUBMISSION_TYPE_EDIT)
  * @return array{valid: bool, errors: array<string, string>, data: array<string, mixed>}
@@ -320,14 +322,22 @@ function validateSubmissionInput(array $input, string $type): array
         $data['name'] = $nameResult['data'];
     }
     
-    // Category validation
-    $categoryId = (int) ($input['category_id'] ?? 0);
-    $categoryResult = Validator::categoryId($categoryId);
-    if (!$categoryResult['valid']) {
-        $errors['category_id'] = $categoryResult['error'];
+    // Category validation - accept array or single ID
+    if (isset($input['category_ids']) && is_array($input['category_ids'])) {
+        $categoryResult = Validator::categoryIds($input['category_ids']);
+        if (!$categoryResult['valid']) {
+            $errors['category_ids'] = $categoryResult['error'];
+        } else {
+            $data['category_ids'] = $categoryResult['data'];
+        }
     } else {
-        $data['category_id'] = $categoryResult['data'];
-        // Category existence will be validated at the service layer
+        $categoryId = (int) ($input['category_id'] ?? 0);
+        $categoryResult = Validator::categoryId($categoryId);
+        if (!$categoryResult['valid']) {
+            $errors['category_id'] = $categoryResult['error'];
+        } else {
+            $data['category_ids'] = [$categoryResult['data']];
+        }
     }
     
     // Price validation
