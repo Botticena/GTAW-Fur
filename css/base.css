@@ -8,6 +8,33 @@
  */
 
 /* ============================================
+   EMOJI FONT SUPPORT
+   Ensures emoji (especially flag emoji) render correctly cross-platform
+   ============================================ */
+@font-face {
+    font-family: 'Emoji';
+    src: local('Apple Color Emoji'),
+         local('Segoe UI Emoji'),
+         local('Segoe UI Symbol'),
+         local('Noto Color Emoji'),
+         local('Android Emoji'),
+         local('EmojiOne Color'),
+         local('Twemoji Mozilla');
+    unicode-range: U+1F1E0-1F1FF, /* Flags (Emoji) */
+                   U+1F300-1F5FF, /* Misc Symbols and Pictographs */
+                   U+1F600-1F64F, /* Emoticons */
+                   U+1F680-1F6FF, /* Transport and Map */
+                   U+1F700-1F77F, /* Alchemical Symbols */
+                   U+1F780-1F7FF, /* Geometric Shapes Extended */
+                   U+1F800-1F8FF, /* Supplemental Arrows-C */
+                   U+1F900-1F9FF, /* Supplemental Symbols and Pictographs */
+                   U+1FA00-1FA6F, /* Chess Symbols */
+                   U+1FA70-1FAFF, /* Symbols and Pictographs Extended-A */
+                   U+2600-26FF,   /* Misc symbols */
+                   U+2700-27BF;   /* Dingbats */
+}
+
+/* ============================================
    CSS CUSTOM PROPERTIES
    ============================================ */
 :root {
@@ -102,6 +129,19 @@ body {
     background: var(--bg-dark);
     color: var(--text-primary);
     min-height: 100vh;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif, 'Emoji';
+}
+
+/* Emoji-specific styling for consistent rendering */
+.community-flag,
+.sidebar-community-flag,
+.logo-icon,
+.stat-icon,
+.empty-state .icon {
+    font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', 'Android Emoji', 'EmojiOne Color', 'Twemoji Mozilla', sans-serif;
+    font-style: normal;
+    font-weight: normal;
+    line-height: 1;
 }
 
 /* ============================================
@@ -579,6 +619,233 @@ body {
 .mb-sm { margin-bottom: var(--spacing-sm); }
 .mb-md { margin-bottom: var(--spacing-md); }
 .mb-lg { margin-bottom: var(--spacing-lg); }
+
+/* ============================================
+   COMMUNITY SWITCHER
+   Header dropdown for community/locale selection
+   Cross-browser compatible (Chrome, Firefox, Safari)
+   ============================================ */
+.community-switcher {
+    position: relative;
+}
+
+/* Reset button styles for cross-browser consistency */
+.community-toggle {
+    /* Reset browser defaults */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    font-family: inherit;
+    line-height: 1.4;
+    margin: 0;
+    
+    /* Custom styling */
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 0.4rem 0.6rem;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    color: var(--text-primary);
+}
+
+.community-toggle:hover {
+    background: var(--bg-elevated);
+    border-color: var(--border-color-hover);
+}
+
+.community-toggle:focus {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+.community-toggle-arrow {
+    font-size: 0.6rem;
+    opacity: 0.6;
+    transition: transform var(--transition-fast);
+    line-height: 1;
+}
+
+.community-toggle[aria-expanded="true"] .community-toggle-arrow {
+    transform: rotate(180deg);
+}
+
+.community-dropdown {
+    display: none;
+    flex-direction: column;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 0.35rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    min-width: 160px;
+    z-index: 1000;
+    overflow: hidden;
+}
+
+.community-dropdown.open {
+    display: flex;
+    animation: dropdownFadeIn 0.15s ease;
+}
+
+@keyframes dropdownFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.community-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.85rem;
+    text-decoration: none;
+    color: var(--text-primary);
+    transition: background var(--transition-fast);
+    font-size: 0.9rem;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.community-option:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+}
+
+.community-option.active {
+    background: var(--bg-elevated);
+}
+
+.community-flag {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
+.community-name {
+    flex: 1;
+}
+
+.community-check {
+    color: var(--success);
+    font-size: 0.85rem;
+    flex-shrink: 0;
+}
+
+/* Sidebar Community Switcher (Dashboard) */
+.sidebar-community-switcher {
+    position: relative;
+    margin-bottom: var(--spacing-sm);
+}
+
+/* Reset button styles for cross-browser consistency */
+.sidebar-community-toggle {
+    /* Reset browser defaults */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    font-family: inherit;
+    line-height: 1.4;
+    margin: 0;
+    
+    /* Custom styling */
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    box-sizing: border-box;
+}
+
+.sidebar-community-toggle:hover {
+    border-color: var(--border-color-hover);
+}
+
+.sidebar-community-toggle:focus {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+.sidebar-community-name {
+    flex: 1;
+    text-align: left;
+}
+
+.sidebar-community-arrow {
+    font-size: 0.6rem;
+    opacity: 0.6;
+    transition: transform var(--transition-fast);
+    line-height: 1;
+}
+
+.sidebar-community-toggle[aria-expanded="true"] .sidebar-community-arrow {
+    transform: rotate(180deg);
+}
+
+.sidebar-community-dropdown {
+    display: none;
+    flex-direction: column;
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    margin-bottom: 0.35rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    z-index: 100;
+}
+
+.sidebar-community-dropdown.open {
+    display: flex;
+    animation: dropdownFadeIn 0.15s ease;
+}
+
+.sidebar-community-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    text-decoration: none;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    transition: background var(--transition-fast);
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.sidebar-community-option:hover {
+    background: var(--bg-elevated);
+}
+
+.sidebar-community-option.active {
+    background: var(--bg-elevated);
+}
+
+.sidebar-community-option .check {
+    margin-left: auto;
+    color: var(--success);
+}
 
 /* ============================================
    ACCESSIBILITY

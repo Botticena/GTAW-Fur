@@ -45,6 +45,44 @@ window.GTAW = (function () {
     const TOAST_ANIMATION_DURATION = 300;
     
     // =========================================
+    // INTERNATIONALIZATION (i18n)
+    // =========================================
+    
+    /**
+     * Get translated string from pre-loaded translations
+     * 
+     * @param {string} key - Translation key (e.g., 'nav.dashboard')
+     * @param {Object} replacements - Placeholder replacements (e.g., {name: 'John'})
+     * @returns {string} Translated string or key as fallback
+     */
+    function __(key, replacements = {}) {
+        const translations = window.GTAW_TRANSLATIONS || {};
+        let text = translations[key] || key;
+        
+        // Handle simple pluralization (format: "singular|plural")
+        if (text.includes('|') && replacements.count !== undefined) {
+            const parts = text.split('|');
+            const count = parseInt(replacements.count, 10);
+            text = count === 1 ? parts[0] : (parts[1] || parts[0]);
+        }
+        
+        // Replace placeholders: {name} → value
+        for (const [placeholder, value] of Object.entries(replacements)) {
+            text = text.replace(new RegExp(`\\{${placeholder}\\}`, 'g'), String(value));
+        }
+        
+        return text;
+    }
+    
+    /**
+     * Get current locale
+     * @returns {string} Current locale code ('en' or 'fr')
+     */
+    function getLocale() {
+        return window.GTAW_LOCALE || 'en';
+    }
+    
+    // =========================================
     // CSRF & SECURITY
     // =========================================
     
@@ -249,9 +287,9 @@ window.GTAW = (function () {
         const command = `/sf ${name}`;
         copyToClipboard(command).then((success) => {
             if (success) {
-                toast(`Copied: ${command}`, 'success');
+                toast(__('card.copied', { command }), 'success');
             } else {
-                toast('Failed to copy command', 'error');
+                toast(__('card.copy_failed'), 'error');
             }
         });
     }
@@ -273,7 +311,8 @@ window.GTAW = (function () {
         localStorage.setItem('gtaw_theme', next);
         
         if (showToastNotification) {
-            toast(`Switched to ${next} mode`, 'info');
+            const modeKey = next === 'dark' ? 'theme.dark' : 'theme.light';
+            toast(__('theme.switched', { mode: __(modeKey) }), 'info');
         }
     }
 
@@ -647,7 +686,7 @@ window.GTAW = (function () {
                 const result = await response.json();
                 
                 if (!result.success) {
-                    toast(result.error || 'Failed to load collections', 'error');
+                    toast(result.error || __('error.loading'), 'error');
                     return;
                 }
                 
@@ -656,8 +695,8 @@ window.GTAW = (function () {
                 
                 if (collections.length === 0) {
                     modalBody = `
-                        <p style="margin-bottom: var(--spacing-md);">You haven't created any collections yet.</p>
-                        <a href="/dashboard/?page=collections&action=add" class="btn btn-primary">Create Collection</a>
+                        <p style="margin-bottom: var(--spacing-md);">${escapeHtml(__('collections.no_collections'))}</p>
+                        <a href="/dashboard/?page=collections&action=add" class="btn btn-primary">${escapeHtml(__('collections.create_first'))}</a>
                     `;
                 } else {
                     const containsResponse = await fetch(`/dashboard/api.php?action=collections/contains&furniture_id=${furnitureId}`);
@@ -672,22 +711,22 @@ window.GTAW = (function () {
                                         data-collection-id="${col.id}"
                                         data-item-count="${col.item_count}">
                                     <span class="collection-picker-name">${escapeHtml(col.name)}</span>
-                                    <span class="collection-picker-status">${containsIds.includes(col.id) ? '✓ Added' : col.item_count + ' items'}</span>
+                                    <span class="collection-picker-status">${containsIds.includes(col.id) ? escapeHtml(__('collections.added_status')) : col.item_count + ' items'}</span>
                                 </button>
                             `).join('')}
                         </div>
                         <div class="collection-picker-footer">
-                            <a href="/dashboard/?page=collections&action=add" class="btn btn-sm">+ New Collection</a>
+                            <a href="/dashboard/?page=collections&action=add" class="btn btn-sm">${escapeHtml(__('collections.new_collection'))}</a>
                         </div>
                     `;
                 }
                 
-                showModal(this.modalId, 'Add to Collection', modalBody, () => {
+                showModal(this.modalId, __('collections.pick_title'), modalBody, () => {
                     this.currentFurnitureId = null;
                 });
             } catch (error) {
                 console.error('Collection picker error:', error);
-                toast('Failed to load collections', 'error');
+                toast(__('error.loading'), 'error');
             }
         },
         
@@ -727,11 +766,11 @@ window.GTAW = (function () {
                     const statusSpan = button.querySelector('.collection-picker-status');
                     if (statusSpan) {
                         const itemCount = button.dataset.itemCount || '0';
-                        statusSpan.textContent = isInCollection ? itemCount + ' items' : '✓ Added';
+                        statusSpan.textContent = isInCollection ? itemCount + ' items' : __('collections.added_status');
                     }
-                    toast(isInCollection ? 'Removed from collection' : 'Added to collection', 'success');
+                    toast(isInCollection ? __('collections.removed') : __('collections.added'), 'success');
                 } else {
-                    toast(result.error || 'Failed to update collection', 'error');
+                    toast(result.error || __('error.generic'), 'error');
                 }
             } catch (error) {
                 console.error('Toggle collection error:', error);
@@ -753,6 +792,10 @@ window.GTAW = (function () {
     // =========================================
 
     return {
+        // i18n
+        __,
+        getLocale,
+        
         // Security
         getCsrfToken,
         escapeHtml,

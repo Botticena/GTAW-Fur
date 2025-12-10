@@ -31,7 +31,9 @@ try {
             requireMethod('GET');
 
             $page = max(1, getQueryInt('page', 1));
-            $perPage = min(MAX_ITEMS_PER_PAGE, max(1, getQueryInt('per_page', 50)));
+            $defaultPerPage = getDefaultItemsPerPage();
+            $maxPerPage = getMaxItemsPerPage();
+            $perPage = min($maxPerPage, max(1, getQueryInt('per_page', $defaultPerPage)));
             $category = getQuery('category', null);
             $category = $category !== null && $category !== '' ? $category : null;
             $tagsStr = getQuery('tags', '');
@@ -65,7 +67,9 @@ try {
             }
 
             $page = max(1, getQueryInt('page', 1));
-            $perPage = min(MAX_ITEMS_PER_PAGE, max(1, getQueryInt('per_page', 50)));
+            $defaultPerPage = getDefaultItemsPerPage();
+            $maxPerPage = getMaxItemsPerPage();
+            $perPage = min($maxPerPage, max(1, getQueryInt('per_page', $defaultPerPage)));
 
             // Favorites only filter
             $favoritesOnly = !empty(getQuery('favorites_only', ''));
@@ -76,8 +80,20 @@ try {
                     jsonError(ERROR_LOGIN_REQUIRED . ' for favorites filter', 401);
                 }
             }
+            
+            // Category filter for category-aware search
+            $categoryFilter = getQuery('category', null);
 
-            $result = searchFurniture($pdo, $query, $page, $perPage, $userFavoritesId);
+            $result = searchFurnitureEnhanced(
+                $pdo, 
+                $query, 
+                $page, 
+                $perPage, 
+                $userFavoritesId, 
+                true,  // expandSynonyms
+                true,  // logSearchQuery
+                $categoryFilter
+            );
             
             // Pass through search metadata if synonyms were expanded
             $extra = isset($result['search_meta']) ? ['search_meta' => $result['search_meta']] : null;
@@ -159,26 +175,19 @@ try {
             requireMethod('GET');
             jsonSuccess(getTagsGrouped($pdo), null, null, null, true, CACHE_TTL_TAGS);
             break;
-        
-        case 'tags/flat':
-            /**
-             * @deprecated Use /api.php?action=tags instead
-             */
+
+        case 'tags/for-categories':
             requireMethod('GET');
+
+            $categoryIdsParam = getQuery('category_ids', '');
+            $categoryIds = [];
             
-            header('X-API-Deprecated: true');
-            header('X-API-Deprecation-Message: This endpoint is deprecated. Use /api.php?action=tags instead.');
-            header('X-API-Deprecation-Date: 2025-01-01');
+            if ($categoryIdsParam !== '') {
+                $categoryIds = array_filter(array_map('intval', explode(',', $categoryIdsParam)));
+            }
             
-            logException('api_deprecation', new Exception(
-                'Deprecated endpoint tags/flat accessed. ' .
-                'Client should migrate to tags endpoint for grouped structure. ' .
-                'IP: ' . ($_SERVER['REMOTE_ADDR'] ?? 'unknown') . ', ' .
-                'User-Agent: ' . ($_SERVER['HTTP_USER_AGENT'] ?? 'unknown') . ', ' .
-                'Referer: ' . ($_SERVER['HTTP_REFERER'] ?? 'unknown')
-            ));
-            
-            jsonSuccess(getTags($pdo));
+            $result = getTagsForCategories($pdo, $categoryIds);
+            jsonSuccess($result, null, null, null, true, CACHE_TTL_TAGS);
             break;
 
         // =============================================

@@ -270,8 +270,8 @@ class CategoryRepository extends Repository
     
     protected function beforeDelete(int $id): bool
     {
-        // Check if category has furniture items
-        $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM furniture WHERE category_id = ?');
+        // Check if category has furniture items (using junction table)
+        $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM furniture_categories WHERE category_id = ?');
         $stmt->execute([$id]);
         $count = (int) $stmt->fetchColumn();
         
@@ -319,7 +319,7 @@ class TagRepository extends Repository
 class TagGroupRepository extends Repository
 {
     protected string $table = 'tag_groups';
-    protected array $fillable = ['name', 'slug', 'color', 'sort_order'];
+    protected array $fillable = ['name', 'slug', 'color', 'sort_order', 'is_general'];
     
     protected function beforeCreate(array $data): array
     {
@@ -334,6 +334,9 @@ class TagGroupRepository extends Repository
         }
         if (!isset($data['sort_order'])) {
             $data['sort_order'] = 0;
+        }
+        if (!isset($data['is_general'])) {
+            $data['is_general'] = 1;
         }
         
         return $data;
@@ -353,6 +356,10 @@ class TagGroupRepository extends Repository
     {
         // Set tags' group_id to NULL when tag group is deleted
         $stmt = $this->pdo->prepare('UPDATE tags SET group_id = NULL WHERE group_id = ?');
+        $stmt->execute([$id]);
+        
+        // Remove category links
+        $stmt = $this->pdo->prepare('DELETE FROM category_tag_groups WHERE tag_group_id = ?');
         $stmt->execute([$id]);
     }
 }

@@ -15,13 +15,26 @@ if (basename($_SERVER['PHP_SELF']) === 'auth.php') {
 
 /**
  * Exchange authorization code for access token
+ * 
+ * @param string $code Authorization code from OAuth callback
+ * @param array|null $oauthConfig OAuth config array (if null, uses legacy config lookup)
+ * @return array|null Token response or null on failure
  */
-function exchangeCodeForToken(string $code): ?array
+function exchangeCodeForToken(string $code, ?array $oauthConfig = null): ?array
 {
+    // Use provided config or fall back to legacy config lookup
+    if ($oauthConfig !== null) {
+        $clientId = $oauthConfig['client_id'] ?? '';
+        $clientSecret = $oauthConfig['client_secret'] ?? '';
+        $redirectUri = $oauthConfig['redirect_uri'] ?? '';
+        $tokenUrl = $oauthConfig['token_url'] ?? 'https://ucp.gta.world/oauth/token';
+    } else {
+        // Legacy config lookup for backwards compatibility
     $clientId = config('oauth.client_id');
     $clientSecret = config('oauth.client_secret');
     $redirectUri = config('oauth.redirect_uri');
     $tokenUrl = config('oauth.token_url', 'https://ucp.gta.world/oauth/token');
+    }
     
     if (empty($clientId) || empty($clientSecret)) {
         error_log('OAuth credentials not configured');
@@ -69,10 +82,18 @@ function exchangeCodeForToken(string $code): ?array
 
 /**
  * Fetch user data from GTAW API using access token
+ * 
+ * @param string $accessToken OAuth access token
+ * @param array|null $oauthConfig OAuth config array (if null, uses legacy config lookup)
+ * @return array|null User data or null on failure
  */
-function fetchGtawUserData(string $accessToken): ?array
+function fetchGtawUserData(string $accessToken, ?array $oauthConfig = null): ?array
 {
+    if ($oauthConfig !== null) {
+        $userUrl = $oauthConfig['user_url'] ?? 'https://ucp.gta.world/api/user';
+    } else {
     $userUrl = config('oauth.user_url', 'https://ucp.gta.world/api/user');
+    }
     
     $ch = curl_init($userUrl);
     curl_setopt_array($ch, [
@@ -108,12 +129,20 @@ function fetchGtawUserData(string $accessToken): ?array
 
 /**
  * Create or update user in database after OAuth login
+ * 
+ * @param PDO $pdo Database connection
+ * @param int $gtawId GTA World user ID
+ * @param string $community Community identifier ('en' or 'fr')
+ * @param string $username GTA World username
+ * @param string|null $gtawRole User's GTAW role
+ * @param string|null $mainCharacter User's main character name
+ * @return array User data array
  */
-function createOrUpdateUser(PDO $pdo, int $gtawId, string $username, ?string $gtawRole, ?string $mainCharacter): array
+function createOrUpdateUser(PDO $pdo, int $gtawId, string $community, string $username, ?string $gtawRole, ?string $mainCharacter): array
 {
-    // Check if user exists
-    $stmt = $pdo->prepare('SELECT * FROM users WHERE gtaw_id = ?');
-    $stmt->execute([$gtawId]);
+    // Check if user exists (by gtaw_id AND community - composite key)
+    $stmt = $pdo->prepare('SELECT * FROM users WHERE gtaw_id = ? AND community = ?');
+    $stmt->execute([$gtawId, $community]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
     
     if ($user) {
@@ -121,26 +150,27 @@ function createOrUpdateUser(PDO $pdo, int $gtawId, string $username, ?string $gt
         $stmt = $pdo->prepare('
             UPDATE users 
             SET username = ?, gtaw_role = ?, main_character = ?, last_login = NOW() 
-            WHERE gtaw_id = ?
+            WHERE gtaw_id = ? AND community = ?
         ');
-        $stmt->execute([$username, $gtawRole, $mainCharacter, $gtawId]);
+        $stmt->execute([$username, $gtawRole, $mainCharacter, $gtawId, $community]);
         
         // Refresh user data
-        $stmt = $pdo->prepare('SELECT * FROM users WHERE gtaw_id = ?');
-        $stmt->execute([$gtawId]);
+        $stmt = $pdo->prepare('SELECT * FROM users WHERE gtaw_id = ? AND community = ?');
+        $stmt->execute([$gtawId, $community]);
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
     
     // Create new user
     $stmt = $pdo->prepare('
-        INSERT INTO users (gtaw_id, username, gtaw_role, main_character, last_login, created_at)
-        VALUES (?, ?, ?, ?, NOW(), NOW())
+        INSERT INTO users (gtaw_id, community, username, gtaw_role, main_character, last_login, created_at)
+        VALUES (?, ?, ?, ?, ?, NOW(), NOW())
     ');
-    $stmt->execute([$gtawId, $username, $gtawRole, $mainCharacter]);
+    $stmt->execute([$gtawId, $community, $username, $gtawRole, $mainCharacter]);
     
     return [
         'id' => (int) $pdo->lastInsertId(),
         'gtaw_id' => $gtawId,
+        'community' => $community,
         'username' => $username,
         'gtaw_role' => $gtawRole,
         'main_character' => $mainCharacter,
@@ -182,6 +212,7 @@ function getCurrentUser(): ?array
     return [
         'id' => $_SESSION['user_id'] ?? null,
         'gtaw_id' => $_SESSION['gtaw_id'] ?? null,
+        'community' => $_SESSION['community'] ?? 'en',
         'username' => $_SESSION['username'] ?? null,
         'main_character' => $_SESSION['main_character'] ?? null,
     ];
@@ -197,16 +228,23 @@ function getCurrentUserId(): ?int
 
 /**
  * Create user session after successful OAuth
+ * 
+ * @param array $user User data from createOrUpdateUser
+ * @param string|null $community Community identifier (optional, uses user's community if not provided)
  */
-function createUserSession(array $user): void
+function createUserSession(array $user, ?string $community = null): void
 {
     session_regenerate_id(true);
     
     $_SESSION['user_id'] = $user['id'];
     $_SESSION['gtaw_id'] = $user['gtaw_id'];
+    $_SESSION['community'] = $community ?? $user['community'] ?? 'en';
     $_SESSION['username'] = $user['username'];
     $_SESSION['main_character'] = $user['main_character'];
     $_SESSION['logged_in'] = true;
+    
+    // Also set locale to match community by default
+    $_SESSION['locale'] = $_SESSION['community'];
 }
 
 /**
@@ -256,6 +294,35 @@ function requireAdmin(): void
 }
 
 /**
+ * Check if current admin is a master admin
+ */
+function isMasterAdmin(): bool
+{
+    if (!isAdminLoggedIn()) {
+        return false;
+    }
+    
+    $admin = getCurrentAdmin();
+    return $admin && ($admin['role'] ?? 'admin') === 'master';
+}
+
+/**
+ * Require master admin access
+ * Redirects regular admins to dashboard with error message
+ */
+function requireMasterAdmin(): void
+{
+    requireAdmin();
+    
+    if (!isMasterAdmin()) {
+        if (isAjax()) {
+            jsonError('Master admin access required', 403);
+        }
+        redirect('/admin/?error=' . urlencode('Access denied. Master admin privileges required.'));
+    }
+}
+
+/**
  * Get current admin data from session
  */
 function getCurrentAdmin(): ?array
@@ -267,6 +334,7 @@ function getCurrentAdmin(): ?array
     return [
         'id' => $_SESSION['admin_id'] ?? null,
         'username' => $_SESSION['admin_username'] ?? null,
+        'role' => $_SESSION['admin_role'] ?? 'admin',
     ];
 }
 
@@ -299,6 +367,7 @@ function createAdminSession(array $admin): void
     
     $_SESSION['admin_id'] = $admin['id'];
     $_SESSION['admin_username'] = $admin['username'];
+    $_SESSION['admin_role'] = $admin['role'] ?? 'admin';
     $_SESSION['admin_logged_in'] = true;
 }
 

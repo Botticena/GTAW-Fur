@@ -16,8 +16,8 @@ access.log
 
 # Database backups and dumps
 backups/
-database_backups/
-migrations/
+database/
+schema.sql
 
 # PHP
 vendor/
@@ -39,3 +39,6 @@ images/furniture/*.webp
 images/furniture/*.jpg
 images/furniture/*.png
 !images/furniture/.gitkeep
+
+# Generated classifier data (auto-generated from DB)
+data/category_keywords.php

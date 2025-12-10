@@ -45,7 +45,8 @@ function getSubmissions(
     ?int $userId = null,
     ?string $search = null
 ): array {
-    $perPage = min(max(1, $perPage), MAX_ITEMS_PER_PAGE);
+    $maxPerPage = getMaxItemsPerPage();
+    $perPage = min(max(1, $perPage), $maxPerPage);
     $page = max(1, $page);
     $offset = ($page - 1) * $perPage;
     

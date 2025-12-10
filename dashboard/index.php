@@ -72,6 +72,12 @@ switch ($page) {
         break;
     
     case 'submissions':
+        // Check if submissions feature is enabled
+        if (!isFeatureEnabled('submissions_enabled')) {
+            echo '<div class="alert alert-error">' . e(__('submissions.disabled')) . '</div>';
+            break;
+        }
+        
         if ($action === 'new') {
             renderSubmissionNew($pdo);
         } elseif ($action === 'edit' && $id > 0) {
@@ -108,7 +114,7 @@ function renderOverview(PDO $pdo, int $userId): void
     $approvedCount = count(array_filter($submissions, fn($s) => $s['status'] === SUBMISSION_STATUS_APPROVED));
     ?>
     <div class="admin-header">
-        <h1>📊 Overview</h1>
+        <h1>📊 <?= e(__('dashboard.overview')) ?></h1>
     </div>
     
     <div class="stats-grid">
@@ -116,38 +122,38 @@ function renderOverview(PDO $pdo, int $userId): void
         <div class="stat-card">
             <div class="stat-icon">❤️</div>
             <p class="stat-value"><?= number_format($favoritesCount) ?></p>
-            <p class="stat-label">Favorites</p>
+            <p class="stat-label"><?= e(__('dashboard.favorites')) ?></p>
         </div>
         
         <div class="stat-card">
             <div class="stat-icon">📁</div>
             <p class="stat-value"><?= number_format(count($collections)) ?></p>
-            <p class="stat-label">Collections</p>
+            <p class="stat-label"><?= e(__('dashboard.collections')) ?></p>
         </div>
         
         <div class="stat-card">
             <div class="stat-icon">📝</div>
             <p class="stat-value"><?= number_format(count($submissions)) ?></p>
-            <p class="stat-label">Submissions</p>
+            <p class="stat-label"><?= e(__('dashboard.submissions')) ?></p>
         </div>
         
         <div class="stat-card">
             <div class="stat-icon">⏳</div>
             <p class="stat-value"><?= number_format($pendingCount) ?></p>
-            <p class="stat-label">Pending Review</p>
+            <p class="stat-label"><?= e(__('dashboard.pending_review')) ?></p>
         </div>
     </div>
     
-    <h2>Quick Actions</h2>
+    <h2><?= e(__('dashboard.quick_actions')) ?></h2>
     <div style="display: flex; flex-wrap: wrap; gap: var(--spacing-md); margin-bottom: var(--spacing-xl);">
-        <a href="/dashboard/?page=collections&action=add" class="btn btn-primary">➕ Create Collection</a>
-        <a href="/dashboard/?page=submissions&action=new" class="btn btn-primary">📝 Submit Furniture</a>
-        <a href="/" class="btn">🔍 Browse Catalog</a>
+        <a href="/dashboard/?page=collections&action=add" class="btn btn-primary">➕ <?= e(__('collections.create')) ?></a>
+        <a href="/dashboard/?page=submissions&action=new" class="btn btn-primary">📝 <?= e(__('submissions.submit')) ?></a>
+        <a href="/" class="btn">🔍 <?= e(__('dashboard.browse')) ?></a>
     </div>
     
     <!-- Recently Viewed Section (populated by JS) -->
     <div id="recently-viewed-section" class="recently-viewed-section" style="display: none;">
-        <h2>Recently Viewed</h2>
+        <h2><?= e(__('dashboard.recently_viewed')) ?></h2>
         <div id="recently-viewed-grid" class="recently-viewed-grid">
             <!-- Populated by JS -->
         </div>
@@ -163,11 +169,11 @@ function renderFavorites(PDO $pdo, int $userId): void
     $favorites = getUserFavorites($pdo, $userId);
     ?>
     <div class="admin-header">
-        <h1>❤️ My Favorites</h1>
+        <h1>❤️ <?= e(__('favorites.title')) ?></h1>
         <div class="actions">
             <?php if (!empty($favorites)): ?>
-            <button class="btn" onclick="Dashboard.exportFavorites()">📥 Export</button>
-            <button class="btn btn-danger" onclick="Dashboard.clearAllFavorites(<?= count($favorites) ?>)">🗑️ Clear All</button>
+            <button class="btn" onclick="Dashboard.exportFavorites()">📥 <?= e(__('favorites.export')) ?></button>
+            <button class="btn btn-danger" onclick="Dashboard.clearAllFavorites(<?= count($favorites) ?>)">🗑️ <?= e(__('favorites.clear_all')) ?></button>
             <?php endif; ?>
         </div>
     </div>
@@ -176,10 +182,10 @@ function renderFavorites(PDO $pdo, int $userId): void
     <div class="data-table-container">
         <?= renderEmptyState(
             '❤️',
-            'No favorites yet',
-            'Browse the catalog and click the heart icon to add items to your favorites.',
+            __('favorites.empty'),
+            __('favorites.empty_hint'),
             '/',
-            'Browse Catalog'
+            __('dashboard.browse')
         ) ?>
     </div>
     <?php else: ?>
@@ -190,8 +196,8 @@ function renderFavorites(PDO $pdo, int $userId): void
         <input type="search" 
                class="table-search-input" 
                data-table="favorites-table"
-               placeholder="🔍 Search favorites..."
-               aria-label="Search favorites">
+               placeholder="🔍 <?= e(__('search.search_favorites')) ?>"
+               aria-label="<?= e(__('search.search_favorites')) ?>">
     </div>
     <?php endif; ?>
     
@@ -199,11 +205,11 @@ function renderFavorites(PDO $pdo, int $userId): void
         <table id="favorites-table" class="data-table">
             <thead>
                 <tr>
-                    <th style="width: 60px;">Image</th>
-                    <th>Name</th>
-                    <th>Category</th>
-                    <th style="width: 80px;">Price</th>
-                    <th style="width: 200px;">Actions</th>
+                    <th style="width: 60px;"><?= e(__('table.image')) ?></th>
+                    <th><?= e(__('table.name')) ?></th>
+                    <th><?= e(__('table.category')) ?></th>
+                    <th style="width: 80px;"><?= e(__('table.price')) ?></th>
+                    <th style="width: 200px;"><?= e(__('table.actions')) ?></th>
                 </tr>
             </thead>
             <tbody>
@@ -224,7 +230,7 @@ function renderFavorites(PDO $pdo, int $userId): void
                     <td><?= e($catDisplay) ?></td>
                     <td>$<?= number_format($item['price']) ?></td>
                     <td class="actions">
-                        <button class="btn btn-sm" onclick="Dashboard.copyCommand('<?= e(addslashes($item['name'])) ?>')">📋 Copy</button>
+                        <button class="btn btn-sm" onclick="Dashboard.copyCommand('<?= e(addslashes($item['name'])) ?>')">📋 <?= e(__('card.copy')) ?></button>
                         <button class="btn btn-sm" onclick="Dashboard.addToCollection(<?= $item['id'] ?>)">📁</button>
                         <button class="btn btn-sm btn-danger" onclick="Dashboard.removeFavorite(<?= $item['id'] ?>)">✕</button>
                     </td>
@@ -242,9 +248,9 @@ function renderCollectionsList(PDO $pdo, int $userId): void
     $collections = getUserCollections($pdo, $userId);
     ?>
     <div class="admin-header">
-        <h1>📁 My Collections</h1>
+        <h1>📁 <?= e(__('collections.title')) ?></h1>
         <div class="actions">
-            <a href="/dashboard/?page=collections&action=add" class="btn btn-primary">+ Create Collection</a>
+            <a href="/dashboard/?page=collections&action=add" class="btn btn-primary">+ <?= e(__('collections.create')) ?></a>
         </div>
     </div>
     
@@ -252,10 +258,10 @@ function renderCollectionsList(PDO $pdo, int $userId): void
     <div class="data-table-container">
         <?= renderEmptyState(
             '📁',
-            'No collections yet',
-            'Create collections to organize your furniture items into shareable lists.',
+            __('collections.empty'),
+            __('collections.empty_hint'),
             '/dashboard/?page=collections&action=add',
-            'Create Your First Collection'
+            __('collections.create_first')
         ) ?>
     </div>
     <?php else: ?>
@@ -266,8 +272,8 @@ function renderCollectionsList(PDO $pdo, int $userId): void
         <input type="search" 
                class="table-search-input" 
                data-table="collections-table"
-               placeholder="🔍 Search collections..."
-               aria-label="Search collections">
+               placeholder="🔍 <?= e(__('search.search_collections')) ?>"
+               aria-label="<?= e(__('search.search_collections')) ?>">
     </div>
     <?php endif; ?>
     
@@ -275,11 +281,11 @@ function renderCollectionsList(PDO $pdo, int $userId): void
         <table id="collections-table" class="data-table">
             <thead>
                 <tr>
-                    <th>Name</th>
-                    <th>Description</th>
-                    <th style="width: 80px;">Items</th>
-                    <th style="width: 80px;">Visibility</th>
-                    <th style="width: 200px;">Actions</th>
+                    <th><?= e(__('table.name')) ?></th>
+                    <th><?= e(__('table.description')) ?></th>
+                    <th style="width: 80px;"><?= e(__('collections.items')) ?></th>
+                    <th style="width: 80px;"><?= e(__('collections.visibility')) ?></th>
+                    <th style="width: 200px;"><?= e(__('table.actions')) ?></th>
                 </tr>
             </thead>
             <tbody>
@@ -289,15 +295,21 @@ function renderCollectionsList(PDO $pdo, int $userId): void
                     <td><?= e($col['description'] ?: '-') ?></td>
                     <td><?= number_format($col['item_count']) ?></td>
                     <td>
+                        <?php if (isFeatureEnabled('collections_public')): ?>
                         <span class="badge <?= $col['is_public'] ? 'badge-success' : '' ?>">
-                            <?= $col['is_public'] ? '🌐 Public' : '🔒 Private' ?>
+                            <?= $col['is_public'] ? e(__('collections.public')) : e(__('collections.private')) ?>
                         </span>
+                        <?php else: ?>
+                        <span class="badge">
+                            <?= e(__('collections.private')) ?>
+                        </span>
+                        <?php endif; ?>
                     </td>
                     <td class="actions">
-                        <a href="/dashboard/?page=collections&action=view&id=<?= $col['id'] ?>" class="btn btn-sm">View</a>
-                        <a href="/dashboard/?page=collections&action=edit&id=<?= $col['id'] ?>" class="btn btn-sm">Edit</a>
-                        <button class="btn btn-sm" onclick="Dashboard.duplicateCollection(<?= $col['id'] ?>, '<?= e(addslashes($col['name'])) ?>')" title="Duplicate">📋</button>
-                        <?php if ($col['is_public']): ?>
+                        <a href="/dashboard/?page=collections&action=view&id=<?= $col['id'] ?>" class="btn btn-sm"><?= e(__('collections.view')) ?></a>
+                        <a href="/dashboard/?page=collections&action=edit&id=<?= $col['id'] ?>" class="btn btn-sm"><?= e(__('collections.edit')) ?></a>
+                        <button class="btn btn-sm" onclick="Dashboard.duplicateCollection(<?= $col['id'] ?>, '<?= e(addslashes($col['name'])) ?>')" title="<?= e(__('collections.duplicate')) ?>">📋</button>
+                        <?php if ($col['is_public'] && isFeatureEnabled('collections_public')): ?>
                         <button class="btn btn-sm" onclick="Dashboard.shareCollection(<?= $col['id'] ?>, '<?= e($col['slug']) ?>', '<?= e($col['owner_username'] ?? $_SESSION['username'] ?? '') ?>')">🔗</button>
                         <?php endif; ?>
                         <button class="btn btn-sm btn-danger" onclick="Dashboard.deleteCollection(<?= $col['id'] ?>, '<?= e(addslashes($col['name'])) ?>')">✕</button>
@@ -316,7 +328,7 @@ function renderCollectionView(PDO $pdo, int $userId, int $id): void
     $currentUser = getCurrentUser();
     $collection = getCollectionById($pdo, $id);
     if (!$collection || $collection['user_id'] !== $userId) {
-        echo '<div class="alert alert-error">Collection not found</div>';
+        echo '<div class="alert alert-error">' . e(__('collections.not_found')) . '</div>';
         return;
     }
     
@@ -325,11 +337,11 @@ function renderCollectionView(PDO $pdo, int $userId, int $id): void
     <div class="admin-header">
         <h1>📁 <?= e($collection['name']) ?></h1>
         <div class="actions">
-            <a href="/dashboard/?page=collections" class="btn">← Back</a>
-            <?php if ($collection['is_public']): ?>
-            <button class="btn" onclick="Dashboard.shareCollection(<?= $id ?>, '<?= e($collection['slug']) ?>', '<?= e($collection['owner_username'] ?? $_SESSION['username'] ?? '') ?>')">🔗 Share</button>
+            <a href="/dashboard/?page=collections" class="btn"><?= e(__('collections.back')) ?></a>
+            <?php if ($collection['is_public'] && isFeatureEnabled('collections_public')): ?>
+            <button class="btn" onclick="Dashboard.shareCollection(<?= $id ?>, '<?= e($collection['slug']) ?>', '<?= e($collection['owner_username'] ?? $_SESSION['username'] ?? '') ?>')">🔗 <?= e(__('collections.share')) ?></button>
             <?php endif; ?>
-            <button class="btn" onclick="Dashboard.exportCollection(<?= $id ?>)">📥 Export</button>
+            <button class="btn" onclick="Dashboard.exportCollection(<?= $id ?>)">📥 <?= e(__('collections.export')) ?></button>
         </div>
     </div>
     
@@ -341,10 +353,10 @@ function renderCollectionView(PDO $pdo, int $userId, int $id): void
     <div class="data-table-container">
         <?= renderEmptyState(
             '📦',
-            'Collection is empty',
-            'Browse the catalog and add items to this collection.',
+            __('collections.collection_empty'),
+            __('collections.collection_empty_hint'),
             '/',
-            'Browse Catalog'
+            __('dashboard.browse')
         ) ?>
     </div>
     <?php else: ?>
@@ -355,8 +367,8 @@ function renderCollectionView(PDO $pdo, int $userId, int $id): void
         <input type="search" 
                class="table-search-input" 
                data-table="collection-items-table"
-               placeholder="🔍 Search items..."
-               aria-label="Search collection items">
+               placeholder="🔍 <?= e(__('search.search_items')) ?>"
+               aria-label="<?= e(__('search.search_items')) ?>">
     </div>
     <?php endif; ?>
     
@@ -365,11 +377,11 @@ function renderCollectionView(PDO $pdo, int $userId, int $id): void
             <thead>
                 <tr>
                     <th style="width: 40px;">⋮⋮</th>
-                    <th style="width: 60px;">Image</th>
-                    <th>Name</th>
-                    <th>Category</th>
-                    <th style="width: 80px;">Price</th>
-                    <th style="width: 140px;">Actions</th>
+                    <th style="width: 60px;"><?= e(__('table.image')) ?></th>
+                    <th><?= e(__('table.name')) ?></th>
+                    <th><?= e(__('table.category')) ?></th>
+                    <th style="width: 80px;"><?= e(__('table.price')) ?></th>
+                    <th style="width: 140px;"><?= e(__('table.actions')) ?></th>
                 </tr>
             </thead>
             <tbody>
@@ -380,7 +392,7 @@ function renderCollectionView(PDO $pdo, int $userId, int $id): void
                 if (count($cats) > 1) $catDisplay .= ' +' . (count($cats) - 1);
                 ?>
                 <tr data-id="<?= $item['id'] ?>" data-sort-order="<?= $item['sort_order'] ?? $index ?>">
-                    <td class="drag-handle" style="cursor: move; text-align: center; color: var(--text-muted);" title="Drag to reorder">⋮⋮</td>
+                    <td class="drag-handle" style="cursor: move; text-align: center; color: var(--text-muted);" title="<?= e(__('table.drag_reorder')) ?>">⋮⋮</td>
                     <td>
                         <img src="<?= e($item['image_url'] ?? '/images/placeholder.svg') ?>" 
                              alt="<?= e($item['name']) ?>" 
@@ -391,7 +403,7 @@ function renderCollectionView(PDO $pdo, int $userId, int $id): void
                     <td><?= e($catDisplay) ?></td>
                     <td>$<?= number_format($item['price']) ?></td>
                     <td class="actions">
-                        <button class="btn btn-sm" onclick="Dashboard.copyCommand('<?= e(addslashes($item['name'])) ?>')">📋 Copy</button>
+                        <button class="btn btn-sm" onclick="Dashboard.copyCommand('<?= e(addslashes($item['name'])) ?>')">📋 <?= e(__('card.copy')) ?></button>
                         <button class="btn btn-sm btn-danger" onclick="Dashboard.removeFromCollection(<?= $id ?>, <?= $item['id'] ?>)">✕</button>
                     </td>
                 </tr>
@@ -408,9 +420,9 @@ function renderCollectionAdd(PDO $pdo, int $userId): void
     $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
-        <h1>➕ Create Collection</h1>
+        <h1>➕ <?= e(__('collections.create_title')) ?></h1>
         <div class="actions">
-            <a href="/dashboard/?page=collections" class="btn">← Back</a>
+            <a href="/dashboard/?page=collections" class="btn"><?= e(__('collections.back')) ?></a>
         </div>
     </div>
     
@@ -418,25 +430,32 @@ function renderCollectionAdd(PDO $pdo, int $userId): void
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
         
         <div class="form-group">
-            <label for="name">Collection Name *</label>
-            <input type="text" id="name" name="name" required maxlength="100" placeholder="e.g., Modern Living Room">
+            <label for="name"><?= e(__('collections.name')) ?> *</label>
+            <input type="text" id="name" name="name" required maxlength="100" placeholder="<?= e(__('collections.name_placeholder')) ?>">
         </div>
         
         <div class="form-group">
-            <label for="description">Description (optional)</label>
-            <textarea id="description" name="description" rows="3" maxlength="500" placeholder="Describe this collection..."></textarea>
+            <label for="description"><?= e(__('collections.description_optional')) ?></label>
+            <textarea id="description" name="description" rows="3" maxlength="500" placeholder="<?= e(__('collections.description_placeholder')) ?>"></textarea>
         </div>
         
+        <?php if (isFeatureEnabled('collections_public')): ?>
         <div class="form-group">
             <label class="checkbox-label" style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
                 <input type="checkbox" name="is_public" value="1" checked style="width: auto;">
-                <span>Make this collection public (shareable)</span>
+                <span><?= e(__('collections.make_public')) ?></span>
             </label>
         </div>
+        <?php else: ?>
+        <input type="hidden" name="is_public" value="0">
+        <div class="alert alert-info" style="margin-top: 1rem;">
+            <small>⚠️ <?= e(__('collections.public_disabled')) ?> <?= e(__('collections.will_be_private')) ?></small>
+        </div>
+        <?php endif; ?>
         
         <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Create Collection</button>
-            <a href="/dashboard/?page=collections" class="btn">Cancel</a>
+            <button type="submit" class="btn btn-primary"><?= e(__('collections.create')) ?></button>
+            <a href="/dashboard/?page=collections" class="btn"><?= e(__('form.cancel')) ?></a>
         </div>
     </form>
     <?php
@@ -446,16 +465,16 @@ function renderCollectionEdit(PDO $pdo, int $userId, int $id): void
 {
     $collection = getCollectionById($pdo, $id);
     if (!$collection || $collection['user_id'] !== $userId) {
-        echo '<div class="alert alert-error">Collection not found</div>';
+        echo '<div class="alert alert-error">' . e(__('collections.not_found')) . '</div>';
         return;
     }
     
     $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
-        <h1>✏️ Edit Collection</h1>
+        <h1>✏️ <?= e(__('collections.edit_title')) ?></h1>
         <div class="actions">
-            <a href="/dashboard/?page=collections" class="btn">← Back</a>
+            <a href="/dashboard/?page=collections" class="btn"><?= e(__('collections.back')) ?></a>
         </div>
     </div>
     
@@ -463,25 +482,32 @@ function renderCollectionEdit(PDO $pdo, int $userId, int $id): void
         <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
         
         <div class="form-group">
-            <label for="name">Collection Name *</label>
+            <label for="name"><?= e(__('collections.name')) ?> *</label>
             <input type="text" id="name" name="name" required maxlength="100" value="<?= e($collection['name']) ?>">
         </div>
         
         <div class="form-group">
-            <label for="description">Description (optional)</label>
+            <label for="description"><?= e(__('collections.description_optional')) ?></label>
             <textarea id="description" name="description" rows="3" maxlength="500"><?= e($collection['description'] ?? '') ?></textarea>
         </div>
         
+        <?php if (isFeatureEnabled('collections_public')): ?>
         <div class="form-group">
             <label class="checkbox-label" style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
                 <input type="checkbox" name="is_public" value="1" <?= $collection['is_public'] ? 'checked' : '' ?> style="width: auto;">
-                <span>Make this collection public (shareable)</span>
+                <span><?= e(__('collections.make_public')) ?></span>
             </label>
         </div>
+        <?php else: ?>
+        <input type="hidden" name="is_public" value="0">
+        <div class="alert alert-info" style="margin-top: 1rem;">
+            <small>⚠️ <?= e(__('collections.public_disabled')) ?><?php if ($collection['is_public']): ?> <?= e(__('collections.currently_public_warning')) ?><?php else: ?> <?= e(__('collections.will_be_private')) ?><?php endif; ?></small>
+        </div>
+        <?php endif; ?>
         
         <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Save Changes</button>
-            <a href="/dashboard/?page=collections" class="btn">Cancel</a>
+            <button type="submit" class="btn btn-primary"><?= e(__('collections.save')) ?></button>
+            <a href="/dashboard/?page=collections" class="btn"><?= e(__('form.cancel')) ?></a>
         </div>
     </form>
     <?php
@@ -493,9 +519,9 @@ function renderSubmissionsList(PDO $pdo, int $userId): void
     $submissions = $result['items'];
     ?>
     <div class="admin-header">
-        <h1>📝 My Submissions</h1>
+        <h1>📝 <?= e(__('submissions.title')) ?></h1>
         <div class="actions">
-            <a href="/dashboard/?page=submissions&action=new" class="btn btn-primary">+ Submit Furniture</a>
+            <a href="/dashboard/?page=submissions&action=new" class="btn btn-primary">+ <?= e(__('submissions.submit')) ?></a>
         </div>
     </div>
     
@@ -503,10 +529,10 @@ function renderSubmissionsList(PDO $pdo, int $userId): void
     <div class="data-table-container">
         <?= renderEmptyState(
             '📝',
-            'No submissions yet',
-            'Submit new furniture to add to the catalog, or suggest edits to existing items.',
+            __('submissions.empty'),
+            __('submissions.empty_hint'),
             '/dashboard/?page=submissions&action=new',
-            'Submit Furniture'
+            __('submissions.submit')
         ) ?>
     </div>
     <?php else: ?>
@@ -517,8 +543,8 @@ function renderSubmissionsList(PDO $pdo, int $userId): void
         <input type="search" 
                class="table-search-input" 
                data-table="submissions-table"
-               placeholder="🔍 Search submissions..."
-               aria-label="Search submissions">
+               placeholder="🔍 <?= e(__('search.search_submissions')) ?>"
+               aria-label="<?= e(__('search.search_submissions')) ?>">
     </div>
     <?php endif; ?>
     
@@ -526,34 +552,34 @@ function renderSubmissionsList(PDO $pdo, int $userId): void
         <table id="submissions-table" class="data-table">
             <thead>
                 <tr>
-                    <th style="width: 80px;">Type</th>
-                    <th>Name</th>
-                    <th style="width: 100px;">Status</th>
-                    <th style="width: 120px;">Submitted</th>
-                    <th style="width: 140px;">Actions</th>
+                    <th style="width: 80px;"><?= e(__('submissions.type')) ?></th>
+                    <th><?= e(__('table.name')) ?></th>
+                    <th style="width: 100px;"><?= e(__('submissions.status')) ?></th>
+                    <th style="width: 120px;"><?= e(__('submissions.submitted')) ?></th>
+                    <th style="width: 140px;"><?= e(__('table.actions')) ?></th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($submissions as $sub): ?>
                 <tr>
-                    <td><span class="badge"><?= $sub['type'] === SUBMISSION_TYPE_NEW ? '✨ New' : '✏️ Edit' ?></span></td>
+                    <td><span class="badge"><?= $sub['type'] === SUBMISSION_TYPE_NEW ? e(__('submissions.type_new')) : e(__('submissions.type_edit')) ?></span></td>
                     <td>
                         <strong><?= e($sub['data']['name'] ?? 'Untitled') ?></strong>
-                        <?php if ($sub['type'] === SUBMISSION_TYPE_EDIT && !empty($sub['furniture_name'])): ?>
-                        <br><small style="color: var(--text-muted);">Editing: <?= e($sub['furniture_name']) ?></small>
+                        <?php if ($sub['type'] === SUBMISSION_TYPE_EDIT && !empty($sub['data']['edit_notes'])): ?>
+                        <br><small style="color: var(--text-muted);" title="<?= e($sub['data']['edit_notes']) ?>">📝 <?= e(mb_strimwidth($sub['data']['edit_notes'], 0, 50, '...')) ?></small>
                         <?php endif; ?>
                     </td>
                     <td>
                         <?= renderStatusBadge($sub['status']) ?>
                         <?php if ($sub['status'] === SUBMISSION_STATUS_REJECTED && !empty($sub['admin_notes'])): ?>
-                        <br><small style="color: var(--text-muted);" title="<?= e($sub['admin_notes']) ?>">💬 Feedback</small>
+                        <br><small style="color: var(--text-muted);" title="<?= e($sub['admin_notes']) ?>">💬 <?= e(__('submissions.feedback')) ?></small>
                         <?php endif; ?>
                     </td>
                     <td><?= date('M j, Y', strtotime($sub['created_at'])) ?></td>
                     <td class="actions">
-                        <a href="/dashboard/?page=submissions&action=view&id=<?= $sub['id'] ?>" class="btn btn-sm">View</a>
+                        <a href="/dashboard/?page=submissions&action=view&id=<?= $sub['id'] ?>" class="btn btn-sm"><?= e(__('submissions.view')) ?></a>
                         <?php if ($sub['status'] === SUBMISSION_STATUS_PENDING): ?>
-                        <button class="btn btn-sm btn-danger" onclick="Dashboard.cancelSubmission(<?= $sub['id'] ?>)">Cancel</button>
+                        <button class="btn btn-sm btn-danger" onclick="Dashboard.cancelSubmission(<?= $sub['id'] ?>)"><?= e(__('submissions.cancel')) ?></button>
                         <?php endif; ?>
                     </td>
                 </tr>
@@ -577,18 +603,18 @@ function renderSubmissionNew(PDO $pdo): void
     $itemCategoryIds = $furniture ? array_column($furniture['categories'] ?? [], 'id') : [];
     ?>
     <div class="admin-header">
-        <h1><?= $isEdit ? '✏️ Suggest Edit' : '➕ Submit New Furniture' ?></h1>
+        <h1><?= $isEdit ? '✏️ ' . e(__('submissions.suggest_edit')) : '➕ ' . e(__('submissions.submit_new')) ?></h1>
         <div class="actions">
-            <a href="/dashboard/?page=submissions" class="btn">← Back</a>
+            <a href="/dashboard/?page=submissions" class="btn"><?= e(__('collections.back')) ?></a>
         </div>
     </div>
     
     <div class="alert alert-info">
         <?php if ($isEdit): ?>
-        <strong>Editing:</strong> <?= e($furniture['name']) ?><br>
-        Your suggested changes will be reviewed by an administrator before being applied.
+        <strong><?= e(__('submissions.editing')) ?></strong> <?= e($furniture['name']) ?><br>
+        <?= e(__('submissions.editing_note')) ?>
         <?php else: ?>
-        <strong>Note:</strong> Your submission will be reviewed by an administrator before being added to the catalog.
+        <strong>Note:</strong> <?= e(__('submissions.new_note')) ?>
         <?php endif; ?>
     </div>
     
@@ -604,25 +630,25 @@ function renderSubmissionNew(PDO $pdo): void
             <!-- Left Column: Form Container -->
             <div class="form-layout-main">
                 <div class="form-group">
-                    <label for="name">Furniture Name *</label>
+                    <label for="name"><?= e(__('submissions.furniture_name')) ?> *</label>
                     <input type="text" id="name" name="name" required maxlength="255" 
                            value="<?= e($furniture['name'] ?? '') ?>"
-                           placeholder="e.g., Black Double Bed">
-                    <p class="form-help">The exact prop name used in-game</p>
+                           placeholder="<?= e(__('submissions.furniture_name_placeholder')) ?>">
+                    <p class="form-help"><?= e(__('submissions.furniture_name_help')) ?></p>
                 </div>
                 
                 <div class="form-group">
-                    <label for="price">Price</label>
+                    <label for="price"><?= e(__('submissions.price')) ?></label>
                     <input type="number" id="price" name="price" min="0" value="<?= $furniture['price'] ?? 250 ?>">
-                    <p class="form-help">Default is $250 (most common price in-game)</p>
+                    <p class="form-help"><?= e(__('submissions.price_help')) ?></p>
                 </div>
                 
                 <div class="form-group">
-                    <label for="image_url">Image URL</label>
+                    <label for="image_url"><?= e(__('submissions.image_url')) ?></label>
                     <input type="text" id="image_url" name="image_url" 
                            value="<?= e($furniture['image_url'] ?? '') ?>"
-                           placeholder="https://... or /images/...">
-                    <p class="form-help">URL to an image of the furniture (will be processed and converted)</p>
+                           placeholder="<?= e(__('submissions.image_url_placeholder')) ?>">
+                    <p class="form-help"><?= e(__('submissions.image_url_help')) ?></p>
                     <div class="image-preview" id="image-preview">
                         <img src="<?= e($furniture['image_url'] ?? '/images/placeholder.svg') ?>" 
                              alt="Preview" id="preview-img" 
@@ -632,15 +658,15 @@ function renderSubmissionNew(PDO $pdo): void
                 
                 <?php if ($isEdit): ?>
                 <div class="form-group">
-                    <label for="edit_notes">Edit Notes (optional)</label>
+                    <label for="edit_notes"><?= e(__('submissions.edit_notes')) ?></label>
                     <textarea id="edit_notes" name="edit_notes" rows="3" 
-                              placeholder="Explain what you're changing and why..."></textarea>
+                              placeholder="<?= e(__('submissions.edit_notes_placeholder')) ?>"></textarea>
                 </div>
                 <?php endif; ?>
                 
                 <div class="form-actions">
-                    <button type="submit" class="btn btn-primary"><?= $isEdit ? 'Submit Edit' : 'Submit Furniture' ?></button>
-                    <a href="/dashboard/?page=submissions" class="btn">Cancel</a>
+                    <button type="submit" class="btn btn-primary"><?= $isEdit ? e(__('submissions.submit_edit')) : e(__('submissions.submit')) ?></button>
+                    <a href="/dashboard/?page=submissions" class="btn"><?= e(__('form.cancel')) ?></a>
                 </div>
                 
                 <!-- Duplicate Detection Panel (in left column, below form) -->
@@ -655,7 +681,7 @@ function renderSubmissionNew(PDO $pdo): void
             <div class="form-layout-sidebar">
                 <!-- Categories Panel (styled like tags) -->
                 <section class="tags-panel categories-panel">
-                    <h3 class="tags-panel-header">Categories * <small style="font-weight: normal; opacity: 0.7;">(first selected = primary)</small></h3>
+                    <h3 class="tags-panel-header"><?= e(__('submissions.categories')) ?> * <small style="font-weight: normal; opacity: 0.7;"><?= e(__('submissions.categories_help')) ?></small></h3>
                     <div class="tag-group-section">
                         <div class="checkbox-group">
                             <?php foreach ($categories as $cat): ?>
@@ -670,9 +696,10 @@ function renderSubmissionNew(PDO $pdo): void
                 </section>
                 
                 <!-- Tags Panel -->
-                <section class="tags-panel">
-                    <h3 class="tags-panel-header">Tags</h3>
+                <section class="tags-panel" id="tags-container">
+                    <h3 class="tags-panel-header"><?= e(__('submissions.tags')) ?></h3>
                     
+                    <!-- General Tags -->
                     <?php 
                     $itemTagIds = $furniture ? array_column($furniture['tags'] ?? [], 'id') : [];
                     foreach ($tagsGrouped['groups'] as $group): 
@@ -695,6 +722,9 @@ function renderSubmissionNew(PDO $pdo): void
                     </div>
                     <?php endif; ?>
                     <?php endforeach; ?>
+                    
+                    <!-- Category-Specific Tags (loaded dynamically) -->
+                    <div id="category-specific-tags"></div>
                 </section>
             </div>
         </div>
@@ -706,12 +736,12 @@ function renderSubmissionEdit(PDO $pdo, int $userId, int $id): void
 {
     $submission = getSubmissionById($pdo, $id);
     if (!$submission || $submission['user_id'] !== $userId) {
-        echo '<div class="alert alert-error">Submission not found</div>';
+        echo '<div class="alert alert-error">' . e(__('submissions.not_found')) . '</div>';
         return;
     }
     
     if ($submission['status'] !== SUBMISSION_STATUS_PENDING) {
-        echo '<div class="alert alert-error">Cannot edit a ' . e($submission['status']) . ' submission</div>';
+        echo '<div class="alert alert-error">' . e(__('submissions.cannot_edit', ['status' => $submission['status']])) . '</div>';
         return;
     }
     
@@ -722,7 +752,7 @@ function renderSubmissionView(PDO $pdo, int $userId, int $id): void
 {
     $submission = getSubmissionById($pdo, $id);
     if (!$submission || $submission['user_id'] !== $userId) {
-        echo '<div class="alert alert-error">Submission not found</div>';
+        echo '<div class="alert alert-error">' . e(__('submissions.not_found')) . '</div>';
         return;
     }
     
@@ -736,9 +766,9 @@ function renderSubmissionView(PDO $pdo, int $userId, int $id): void
     }
     ?>
     <div class="admin-header">
-        <h1>📝 Submission Details</h1>
+        <h1>📝 <?= e(__('submissions.details')) ?></h1>
         <div class="actions">
-            <a href="/dashboard/?page=submissions" class="btn">← Back</a>
+            <a href="/dashboard/?page=submissions" class="btn"><?= e(__('collections.back')) ?></a>
         </div>
     </div>
     
@@ -747,37 +777,37 @@ function renderSubmissionView(PDO $pdo, int $userId, int $id): void
             <?= renderStatusBadge($submission['status']) ?>
             <?php if (!empty($submission['reviewed_at'])): ?>
             <span style="color: var(--text-muted); margin-left: var(--spacing-md); font-size: 0.875rem;">
-                Reviewed on <?= date('M j, Y', strtotime($submission['reviewed_at'])) ?>
+                <?= e(__('submissions.reviewed_on', ['date' => date('M j, Y', strtotime($submission['reviewed_at']))])) ?>
             </span>
             <?php endif; ?>
         </div>
         
         <?php if ($submission['status'] === SUBMISSION_STATUS_REJECTED && !empty($submission['admin_notes'])): ?>
         <div class="alert alert-error">
-            <strong>Feedback from reviewer:</strong><br>
+            <strong><?= e(__('submissions.feedback')) ?></strong><br>
             <?= e($submission['admin_notes']) ?>
         </div>
         <?php endif; ?>
         
         <div class="form-group">
-            <label>Type</label>
-            <p><?= $submission['type'] === SUBMISSION_TYPE_NEW ? '✨ New Furniture' : '✏️ Edit Suggestion' ?></p>
+            <label><?= e(__('submissions.type')) ?></label>
+            <p><?= $submission['type'] === SUBMISSION_TYPE_NEW ? e(__('submissions.type_new')) . ' Furniture' : e(__('submissions.type_edit')) ?></p>
         </div>
         
         <?php if ($submission['type'] === SUBMISSION_TYPE_EDIT && !empty($submission['furniture_name'])): ?>
         <div class="form-group">
-            <label>Editing</label>
+            <label><?= e(__('submissions.editing')) ?></label>
             <p><?= e($submission['furniture_name']) ?></p>
         </div>
         <?php endif; ?>
         
         <div class="form-group">
-            <label>Name</label>
+            <label><?= e(__('table.name')) ?></label>
             <p><strong><?= e($data['name'] ?? '-') ?></strong></p>
         </div>
         
         <div class="form-group">
-            <label>Categories</label>
+            <label><?= e(__('submissions.categories')) ?></label>
             <p>
                 <?php if (!empty($submittedCategories)): ?>
                     <?php foreach ($submittedCategories as $cat): ?>
@@ -790,13 +820,13 @@ function renderSubmissionView(PDO $pdo, int $userId, int $id): void
         </div>
         
         <div class="form-group">
-            <label>Price</label>
+            <label><?= e(__('submissions.price')) ?></label>
             <p>$<?= number_format($data['price'] ?? 0) ?></p>
         </div>
         
         <?php if (!empty($data['image_url'])): ?>
         <div class="form-group">
-            <label>Image</label>
+            <label><?= e(__('table.image')) ?></label>
             <div class="image-preview">
                 <img src="<?= e($data['image_url']) ?>" alt="Preview">
             </div>
@@ -804,14 +834,14 @@ function renderSubmissionView(PDO $pdo, int $userId, int $id): void
         <?php endif; ?>
         
         <div class="form-group">
-            <label>Submitted</label>
+            <label><?= e(__('submissions.submitted')) ?></label>
             <p><?= date('M j, Y g:i A', strtotime($submission['created_at'])) ?></p>
         </div>
         
         <?php if ($submission['status'] === SUBMISSION_STATUS_PENDING): ?>
         <div class="form-actions">
             <button class="btn btn-danger" onclick="Dashboard.cancelSubmission(<?= $submission['id'] ?>)">
-                Cancel Submission
+                <?= e(__('submissions.cancel')) ?>
             </button>
         </div>
         <?php endif; ?>
@@ -826,9 +856,9 @@ function renderSubmissionView(PDO $pdo, int $userId, int $id): void
 function renderStatusBadge(string $status): string
 {
     return match($status) {
-        SUBMISSION_STATUS_PENDING => '<span class="badge badge-warning">⏳ Pending</span>',
-        SUBMISSION_STATUS_APPROVED => '<span class="badge badge-success">✓ Approved</span>',
-        SUBMISSION_STATUS_REJECTED => '<span class="badge badge-error">✕ Rejected</span>',
+        SUBMISSION_STATUS_PENDING => '<span class="badge badge-warning">' . e(__('submissions.status_pending')) . '</span>',
+        SUBMISSION_STATUS_APPROVED => '<span class="badge badge-success">' . e(__('submissions.status_approved')) . '</span>',
+        SUBMISSION_STATUS_REJECTED => '<span class="badge badge-error">' . e(__('submissions.status_rejected')) . '</span>',
         default => '<span class="badge">' . e($status) . '</span>',
     };
 }

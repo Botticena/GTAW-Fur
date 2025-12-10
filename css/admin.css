@@ -6,6 +6,131 @@
  */
 
 /* ============================================
+   SETTINGS PAGE
+   ============================================ */
+.settings-section {
+    margin-bottom: 2rem;
+}
+
+.settings-section h2 {
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.settings-section > p {
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+}
+
+.settings-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+.setting-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-elevated);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+}
+
+.setting-item.has-error {
+    border-color: var(--error);
+    background: rgba(239, 68, 68, 0.05);
+}
+
+.setting-item-label {
+    flex: 1;
+}
+
+.setting-item-label > label {
+    font-weight: 600;
+    display: block;
+    margin-bottom: 0.25rem;
+}
+
+.setting-item-label > p {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin: 0;
+}
+
+.setting-item-control {
+    flex-shrink: 0;
+    min-width: 200px;
+}
+
+.setting-item-control input[type="text"],
+.setting-item-control input[type="number"],
+.setting-item-control input[type="password"] {
+    width: 100%;
+}
+
+.setting-item-error {
+    color: var(--error);
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+    display: block;
+}
+
+.toggle-switch {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+.toggle-switch input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}
+
+.toggle-slider {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    transition: background 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background: var(--primary);
+}
+
+.toggle-slider::after {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    background: var(--text-primary);
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-slider::after {
+    transform: translateX(20px);
+}
+
+.toggle-label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.settings-form-actions {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+/* ============================================
    ADMIN LAYOUT
    ============================================ */
 .admin-layout {
@@ -374,11 +499,20 @@
     border-top: 1px solid var(--border-color);
 }
 
-/* Checkbox group */
+/* Checkbox group - base style */
 .checkbox-group {
     display: flex;
     flex-wrap: wrap;
     gap: var(--spacing-sm);
+}
+
+/* Grid layout for checkbox groups in form sections (categories, tags, category-specific) */
+.admin-form .tag-group-section .checkbox-group,
+.admin-form .categories-panel .checkbox-group,
+.category-specific-tags .checkbox-group {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-xs);
 }
 
 .checkbox-item {
@@ -417,9 +551,9 @@
     color: white;
 }
 
-/* Categories Panel - uses tags-panel class, just needs scrollable height */
+/* Categories Panel - standardized with tags panel */
 .categories-panel.tags-panel {
-    max-height: 40vh;
+    /* Same styling as tags-panel, no special overrides needed */
 }
 
 /* Category overflow indicator in tables */
@@ -1061,13 +1195,19 @@
 }
 
 /* Tags panel - separate card in sidebar */
+/* Also used for categories panel */
 .tags-panel {
     background: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     padding: var(--spacing-lg);
-    max-height: 60vh;
+    max-height: 50vh;
     overflow-y: auto;
+    margin-bottom: var(--spacing-lg);
+}
+
+.tags-panel:last-child {
+    margin-bottom: 0;
 }
 
 .tags-panel-header {
@@ -1173,13 +1313,10 @@
     flex-shrink: 0;
 }
 
-.admin-form .tag-group-section .checkbox-group {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--spacing-xs);
-}
-
-.admin-form .tag-group-section .checkbox-item {
+/* Standardized checkbox item styling for all form sections */
+.admin-form .tag-group-section .checkbox-item,
+.admin-form .categories-panel .checkbox-item,
+.category-specific-tags .checkbox-item {
     font-size: 0.75rem;
     padding: 4px 8px;
     margin: 0;
@@ -1187,7 +1324,10 @@
 }
 
 /* Checkbox hidden - styled as button */
-.admin-form .tag-group-section .checkbox-item input[type="checkbox"] {
+/* Applied consistently across all checkbox groups */
+.admin-form .tag-group-section .checkbox-item input[type="checkbox"],
+.admin-form .categories-panel .checkbox-item input[type="checkbox"],
+.category-specific-tags .checkbox-item input[type="checkbox"] {
     position: absolute;
     opacity: 0;
     width: 0;
@@ -1253,5 +1393,390 @@
     text-align: center;
     padding: var(--spacing-xl) !important;
     color: var(--text-muted);
+}
+
+/* ============================================
+   CATEGORY-SPECIFIC TAGS
+   Standardized to match regular tag-group-section styling
+   ============================================ */
+.category-specific-tags {
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--border-color);
+}
+
+/* Category-specific tags use same structure as regular tag groups */
+.category-specific-tags .tag-group-section {
+    margin-bottom: var(--spacing-md);
+}
+
+.category-specific-tags .tag-group-section:last-child {
+    margin-bottom: 0;
+}
+
+/* Header for category-specific section - matches tag group h4 style */
+.category-specific-tags > h4 {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0 0 var(--spacing-sm) 0;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding-bottom: var(--spacing-xs);
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* Support legacy form-section-title class if used */
+.category-specific-tags .form-section-title {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0 0 var(--spacing-sm) 0;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding-bottom: var(--spacing-xs);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.category-specific-tags .form-section-title::before {
+    content: '🏷️';
+    font-size: 0.875rem;
+    margin-right: var(--spacing-xs);
+}
+
+/* Standardized color dot - used in both regular and category-specific tags */
+.group-color-dot,
+.tag-group-color {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+/* Legacy support for tag-group-color with different size */
+.tag-group-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+}
+
+/* Tag group indicator badge */
+.tag-group-badge {
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.tag-group-badge.category-specific {
+    background: var(--primary-alpha);
+    color: var(--primary);
+}
+
+/* ============================================
+   RADIO GROUP STYLING
+   ============================================ */
+.radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.radio-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--spacing-md);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.radio-item:hover {
+    border-color: var(--primary);
+}
+
+.radio-item:has(input:checked) {
+    border-color: var(--primary);
+    background: var(--primary-alpha);
+}
+
+.radio-item input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.radio-item > span {
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.radio-item > small {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+/* Checkbox grid for category selection */
+.checkbox-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: var(--spacing-xs);
+}
+
+/* ============================================
+   TOGGLE SWITCH (Settings Page)
+   ============================================ */
+.toggle-switch {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.toggle-switch input[type="checkbox"] {
+    display: none !important;
+    visibility: hidden;
+    position: absolute;
+}
+
+.toggle-slider {
+    width: 48px;
+    height: 24px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    position: relative;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.toggle-slider::after {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    background: white;
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background: var(--primary) !important;
+    border-color: var(--primary) !important;
+}
+
+.toggle-switch input:checked + .toggle-slider::after {
+    left: 26px;
+    transform: translateX(0);
+}
+
+.toggle-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    min-width: 60px;
+    line-height: 1.2;
+}
+
+.toggle-switch input:checked ~ .toggle-label {
+    color: var(--primary);
+    font-weight: 500;
+}
+
+/* =============================================
+   SYNONYM MANAGEMENT STYLES
+   ============================================= */
+
+.weight-badge {
+    display: inline-block;
+    padding: 0.2em 0.5em;
+    background: var(--primary);
+    color: white;
+    border-radius: var(--border-radius-sm);
+    font-size: 0.85em;
+    font-weight: 500;
+}
+
+.toggle-mini {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid var(--border-color);
+    background: var(--bg-elevated);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9em;
+    transition: all 0.2s ease;
+    color: var(--text-secondary);
+}
+
+.toggle-mini:hover {
+    border-color: var(--primary);
+    background: var(--bg-hover);
+}
+
+.toggle-mini.active {
+    background: var(--success);
+    border-color: var(--success);
+    color: white;
+}
+
+.admin-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    flex-wrap: wrap;
+}
+
+.toolbar-search {
+    display: flex;
+    gap: var(--spacing-xs);
+    align-items: center;
+}
+
+.toolbar-search input[type="text"] {
+    min-width: 200px;
+    padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.toolbar-actions {
+    display: flex;
+    gap: var(--spacing-xs);
+    align-items: center;
+}
+
+.toolbar-filter {
+    display: flex;
+    gap: var(--spacing-xs);
+    align-items: center;
+}
+
+.toolbar-filter select {
+    padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+/* Analytics Grid */
+.analytics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-lg);
+}
+
+@media (max-width: 900px) {
+    .analytics-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.admin-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+}
+
+.admin-card h3 {
+    margin: 0 0 var(--spacing-sm) 0;
+    font-size: 1.1rem;
+}
+
+.admin-card h4 {
+    margin: 0 0 var(--spacing-xs) 0;
+    font-size: 1rem;
+}
+
+/* Compact Data Table */
+.data-table-compact {
+    font-size: 0.9rem;
+}
+
+.data-table-compact th,
+.data-table-compact td {
+    padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+/* Form Row (two column) */
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-md);
+}
+
+@media (max-width: 600px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Weight Range Slider */
+input[type="range"] {
+    width: 100%;
+    height: 8px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+input[type="range"]::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Text muted helper */
+.text-muted {
+    color: var(--text-secondary);
+    font-size: 0.9em;
+}
+
+/* Pagination Styles */
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-md);
+}
+
+.pagination-info {
+    color: var(--text-secondary);
+    font-size: 0.9em;
 }
 

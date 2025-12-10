@@ -279,6 +279,93 @@ main {
     font-size: 0.75rem;
 }
 
+/* ============================================
+   AUTOCOMPLETE DROPDOWN
+   ============================================ */
+.autocomplete-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    margin-top: var(--spacing-xs);
+    max-height: 400px;
+    overflow-y: auto;
+    z-index: 200;
+    display: none;
+}
+
+.autocomplete-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    border-left: 3px solid transparent;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.active {
+    background: var(--bg-elevated);
+}
+
+.autocomplete-item.active {
+    border-left-color: var(--primary);
+}
+
+.autocomplete-icon {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+    width: 24px;
+    text-align: center;
+}
+
+.autocomplete-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.autocomplete-text mark {
+    background: var(--primary-alpha);
+    color: var(--primary);
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+.autocomplete-type {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    padding: 2px 6px;
+    background: var(--bg-surface);
+    border-radius: var(--radius-sm);
+}
+
+/* Type-specific styling */
+.autocomplete-type-furniture .autocomplete-type {
+    color: var(--success);
+}
+
+.autocomplete-type-category .autocomplete-type {
+    color: var(--warning);
+}
+
+.autocomplete-type-tag .autocomplete-type {
+    color: var(--primary);
+}
+
+.autocomplete-type-search .autocomplete-type {
+    color: var(--text-secondary);
+}
+
 
 /* ============================================
    FILTERS
@@ -447,7 +534,6 @@ main {
 .furniture-card .card-image {
     position: relative;
     aspect-ratio: 4 / 3;
-    background: var(--bg-elevated);
     overflow: hidden;
     cursor: zoom-in;
 }
@@ -455,7 +541,7 @@ main {
 .furniture-card .card-image img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     transition: transform var(--transition-slow);
 }
 
@@ -474,10 +560,12 @@ main {
 }
 
 .furniture-card .card-body {
-    padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-sm);
+    padding: var(--spacing-sm);
     display: flex;
     flex-direction: column;
     flex: 1;
+    /* Ensure consistent card body layout */
+    justify-content: space-between;
 }
 
 .furniture-card h3 {
@@ -519,8 +607,10 @@ main {
     flex-wrap: nowrap;
     gap: var(--spacing-xs);
     margin-bottom: var(--spacing-sm);
-    min-height: 1.25rem;
-    flex: 1;
+    height: 1.5rem; /* Fixed height for consistent card alignment */
+    min-height: 1.5rem;
+    max-height: 1.5rem;
+    align-items: center;
     overflow: hidden;
 }
 
@@ -1112,7 +1202,7 @@ main {
     padding: var(--spacing-lg);
     background: var(--bg-card);
     border-radius: var(--radius-lg);
-    width: 600px;
+    width: 650px;
     max-width: 90vw;
     margin-left: auto;
     margin-right: auto;
@@ -1169,6 +1259,107 @@ main {
     border-color: var(--primary);
     color: var(--primary);
     background: var(--primary-focus);
+}
+
+/* Similar Items Panel */
+.lightbox-similar {
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--border-color);
+}
+
+.lightbox-similar h4 {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin: 0 0 var(--spacing-sm) 0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.similar-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--spacing-xs);
+}
+
+.similar-item {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.similar-item:hover {
+    transform: scale(1.05);
+    box-shadow: var(--shadow-md);
+    z-index: 1;
+}
+
+.similar-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.similar-item-info {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: var(--spacing-xs);
+    background: linear-gradient(transparent, rgba(0,0,0,0.8));
+    display: flex;
+    flex-direction: column;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+
+.similar-item:hover .similar-item-info {
+    opacity: 1;
+}
+
+.similar-name {
+    font-size: 0.65rem;
+    color: white;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.similar-score {
+    font-size: 0.6rem;
+    color: var(--success);
+}
+
+.similar-grid .no-results {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    padding: var(--spacing-md);
+}
+
+.similar-grid .loading-spinner {
+    grid-column: 1 / -1;
+    margin: var(--spacing-md) auto;
+}
+
+.btn-similar {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.btn-similar:hover {
+    border-color: var(--primary);
+    color: var(--primary);
 }
 
 .lightbox-actions {
@@ -1664,5 +1855,130 @@ main {
     
     .tag-group-tags {
         max-height: 150px;
+    }
+}
+
+/* =============================================
+   SEARCH INFO BANNER
+   Shows synonym expansion, translations, typo corrections
+   ============================================= */
+
+.search-info {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: linear-gradient(135deg, var(--primary-dim) 0%, rgba(var(--primary-rgb), 0.1) 100%);
+    border: 1px solid rgba(var(--primary-rgb), 0.3);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-md);
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    animation: slideIn 0.3s ease-out;
+}
+
+.search-info.dismissed {
+    animation: slideOut 0.2s ease-in forwards;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideOut {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+}
+
+.search-info-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.search-info-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.search-info-icon {
+    font-size: 1.1em;
+    flex-shrink: 0;
+}
+
+.search-info-item strong {
+    color: var(--primary);
+    font-weight: 500;
+}
+
+/* Translation notice - French to English */
+.search-info-translation {
+    color: var(--text-primary);
+}
+
+/* Typo correction notice */
+.search-info-typo {
+    font-style: italic;
+}
+
+/* Synonym expansion */
+.search-info-synonyms {
+    color: var(--text-secondary);
+}
+
+/* Category suggestion */
+.search-info-suggestion a {
+    color: var(--primary);
+    text-decoration: none;
+    transition: color var(--transition-fast);
+}
+
+.search-info-suggestion a:hover {
+    color: var(--primary-light);
+    text-decoration: underline;
+}
+
+.search-info-dismiss {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 1.2em;
+    padding: 0.2em 0.4em;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+    line-height: 1;
+    flex-shrink: 0;
+    align-self: flex-start;
+}
+
+.search-info-dismiss:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+}
+
+@media (max-width: 600px) {
+    .search-info {
+        font-size: 0.85rem;
+        padding: var(--spacing-xs) var(--spacing-sm);
+    }
+    
+    .search-info-content {
+        gap: 0.25rem;
     }
 }

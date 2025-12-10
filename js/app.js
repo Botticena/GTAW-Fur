@@ -30,9 +30,10 @@ const App = {
             favoritesOnly: false
         },
         currentFurnitureForCollection: null,
+        searchMeta: null, // Search metadata (synonym expansion info)
         pagination: {
             page: 1,
-            per_page: 50,
+            per_page: (window.GTAW_SETTINGS?.items_per_page) || 24,
             total: 0,
             total_pages: 0
         },
@@ -201,6 +202,10 @@ const App = {
         this.elements.categorySelect?.addEventListener('change', (e) => {
             this.state.filters.category = e.target.value || null;
             this.state.pagination.page = 1;
+            
+            // Load category-specific tags
+            this.loadTagsForCategory(this.state.filters.category);
+            
             this.loadFurniture();
             this.updateUrl();
         });
@@ -606,6 +611,60 @@ const App = {
     },
 
     /**
+     * Load tags for selected category (includes category-specific tags)
+     * Called when category filter changes
+     */
+    async loadTagsForCategory(categorySlug) {
+        try {
+            let categoryIds = [];
+            
+            if (categorySlug) {
+                const category = this.state.categories.find(c => c.slug === categorySlug);
+                if (category) {
+                    categoryIds = [category.id];
+                }
+            }
+            
+            const { data } = await this.api('tags/for-categories', {
+                params: { category_ids: categoryIds.join(',') }
+            });
+            
+            // Merge general and category-specific tags
+            const combinedGroups = [
+                ...(data.general?.groups || []),
+                ...(data.category_specific?.groups || [])
+            ];
+            
+            this.state.tagGroups = { groups: combinedGroups, ungrouped: [] };
+            this.state.tags = this.flattenTags(this.state.tagGroups);
+            
+            // Clear category-specific tags from filters when category changes
+            this.clearInvalidTagFilters();
+            
+            this.renderTagFilters();
+        } catch (error) {
+            console.error('Failed to load tags for category:', error);
+            // Fallback to general tags
+            await this.loadTags();
+        }
+    },
+
+    /**
+     * Clear tag filters that are no longer valid for current category
+     */
+    clearInvalidTagFilters() {
+        const validSlugs = new Set(this.state.tags.map(t => t.slug));
+        const originalLength = this.state.filters.tags.length;
+        
+        this.state.filters.tags = this.state.filters.tags.filter(slug => validSlugs.has(slug));
+        
+        // If we removed any tags, update the URL
+        if (this.state.filters.tags.length !== originalLength) {
+            this.updateUrl();
+        }
+    },
+
+    /**
      * Flatten grouped tags into a simple array
      */
     flattenTags(groupedData) {
@@ -682,11 +741,14 @@ const App = {
 
             this.state.furniture = result.data;
             this.state.pagination = { ...this.state.pagination, ...result.pagination };
+            
+            // Store search metadata for synonym expansion display
+            this.state.searchMeta = result.search_meta || null;
 
             this.render();
         } catch (error) {
             console.error('Failed to load furniture:', error);
-            this.toast('Failed to load furniture', 'error');
+            this.toast(window.GTAW.__('error.loading'), 'error');
         } finally {
             this.setLoading(false);
             setTimeout(() => {
@@ -708,7 +770,7 @@ const App = {
      */
     async toggleFavorite(furnitureId) {
         if (!this.state.user) {
-            this.toast('Login to save favorites', 'info');
+            this.toast(window.GTAW.__('favorites.login_required'), 'info');
             return;
         }
 
@@ -728,7 +790,7 @@ const App = {
                 body: { furniture_id: furnitureId }
             });
 
-            this.toast(isFavorite ? 'Removed from favorites' : 'Added to favorites', 'success');
+            this.toast(isFavorite ? window.GTAW.__('favorites.removed') : window.GTAW.__('favorites.added'), 'success');
         } catch (error) {
             // Revert on error
             if (isFavorite) {
@@ -737,7 +799,7 @@ const App = {
                 this.state.favorites.delete(furnitureId);
             }
             this.updateFavoriteButton(furnitureId);
-            this.toast('Failed to update favorites', 'error');
+            this.toast(window.GTAW.__('favorites.failed'), 'error');
         }
     },
 
@@ -750,7 +812,7 @@ const App = {
             const isFav = this.state.favorites.has(furnitureId);
             btn.classList.toggle('active', isFav);
             btn.innerHTML = isFav ? '❤️' : '🤍';
-            btn.setAttribute('title', isFav ? 'Remove from favorites' : 'Add to favorites');
+            btn.setAttribute('title', isFav ? window.GTAW.__('favorites.remove') : window.GTAW.__('favorites.add'));
         }
         
         if (this.state.lightbox.isOpen) {
@@ -785,12 +847,12 @@ const App = {
                         index = existingIndex;
                     }
                 } else {
-                    this.toast('Furniture item not found', 'error');
+                    this.toast(window.GTAW.__('empty.not_found'), 'error');
                     return;
                 }
             } catch (error) {
                 console.error('Failed to load furniture item:', error);
-                this.toast('Failed to load furniture item', 'error');
+                this.toast(window.GTAW.__('error.failed_to_load'), 'error');
                 return;
             }
         }
@@ -966,8 +1028,8 @@ const App = {
         const isFav = this.state.favorites.has(furnitureId);
         this.elements.lightboxFavorite.classList.toggle('active', isFav);
         this.elements.lightboxFavorite.innerHTML = isFav ? '❤️' : '🤍';
-        this.elements.lightboxFavorite.setAttribute('title', isFav ? 'Remove from favorites' : 'Add to favorites');
-        this.elements.lightboxFavorite.setAttribute('aria-label', isFav ? 'Remove from favorites' : 'Add to favorites');
+        this.elements.lightboxFavorite.setAttribute('title', isFav ? window.GTAW.__('favorites.remove') : window.GTAW.__('favorites.add'));
+        this.elements.lightboxFavorite.setAttribute('aria-label', isFav ? window.GTAW.__('favorites.remove') : window.GTAW.__('favorites.add'));
     },
 
     /**
@@ -1018,7 +1080,7 @@ const App = {
         
         try {
             await navigator.clipboard.writeText(url.toString());
-            this.toast('Link copied to clipboard!', 'success');
+            this.toast(window.GTAW.__('lightbox.share_copied'), 'success');
         } catch {
             // Fallback
             const input = document.createElement('input');
@@ -1027,7 +1089,7 @@ const App = {
             input.select();
             document.execCommand('copy');
             document.body.removeChild(input);
-            this.toast('Link copied to clipboard!', 'success');
+            this.toast(window.GTAW.__('lightbox.share_copied'), 'success');
         }
     },
 
@@ -1042,6 +1104,9 @@ const App = {
     render() {
         if (!this.elements.grid) return;
 
+        // Render search info banner (synonym expansion notice)
+        this.renderSearchInfo();
+
         if (this.state.furniture.length === 0) {
             const hasFilters = this.state.filters.search || 
                               this.state.filters.category || 
@@ -1050,11 +1115,11 @@ const App = {
             this.elements.grid.innerHTML = `
                 <div class="empty-state">
                     <div class="icon">${hasFilters ? '🔍' : '🪑'}</div>
-                    <h3>${hasFilters ? 'No furniture found' : 'Welcome!'}</h3>
-                    <p>${hasFilters ? 'Try adjusting your search or filters' : 'Start browsing furniture items'}</p>
+                    <h3>${hasFilters ? window.GTAW.__('search.no_results') : window.GTAW.__('empty.welcome')}</h3>
+                    <p>${hasFilters ? window.GTAW.__('search.try_adjusting') : window.GTAW.__('empty.start_browsing')}</p>
                     ${hasFilters ? `
                         <div class="suggestion">
-                            <button class="suggestion-btn" onclick="App.clearAllFilters()">Clear all filters</button>
+                            <button class="suggestion-btn" onclick="App.clearAllFilters()">${window.GTAW.__('filter.clear_all_short')}</button>
                         </div>
                     ` : ''}
                 </div>
@@ -1069,6 +1134,120 @@ const App = {
 
         this.renderPagination();
         this.handleDeepLink();
+    },
+    
+    /**
+     * Render search info banner showing synonym expansion, language translation, and typo corrections
+     */
+    renderSearchInfo() {
+        // Find or create search info container
+        let searchInfo = document.getElementById('search-info');
+        
+        // Check if we have any metadata to display
+        const meta = this.state.searchMeta;
+        const hasFrenchTranslation = meta?.language === 'fr' && meta?.translated_query;
+        const hasSynonyms = meta?.synonyms_used?.length > 0;
+        const hasTypoCorrection = meta?.did_you_mean && Object.keys(meta.did_you_mean).length > 0;
+        const hasSuggestedCategory = meta?.suggested_category && this.state.furniture.length === 0;
+        const hasZeroResults = this.state.furniture.length === 0;
+        
+        if (!meta || (!hasFrenchTranslation && !hasSynonyms && !hasTypoCorrection && !hasSuggestedCategory)) {
+            if (searchInfo) searchInfo.remove();
+            return;
+        }
+        
+        if (!searchInfo) {
+            searchInfo = document.createElement('div');
+            searchInfo.id = 'search-info';
+            searchInfo.className = 'search-info';
+            // Insert before grid
+            this.elements.grid?.parentNode?.insertBefore(searchInfo, this.elements.grid);
+        }
+        
+        let infoHtml = [];
+        
+        // French translation notice: User typed French -> Translated to English for search
+        if (hasFrenchTranslation) {
+            const originalFrench = meta.original_query || meta.original || '';
+            const translatedEnglish = meta.translated_query || meta.translated || '';
+            const synonyms = meta.synonyms_used || [];
+            
+            infoHtml.push(`
+                <div class="search-info-item search-info-translation">
+                    <span class="search-info-icon">🇫🇷→🇬🇧</span>
+                    <span>${window.GTAW.__('search.translated_from', {
+                        translated: window.GTAW.escapeHtml(translatedEnglish),
+                        original: window.GTAW.escapeHtml(originalFrench)
+                    })}</span>
+                </div>
+            `);
+            
+            // Show synonyms used if any
+            if (synonyms.length > 0) {
+                const synonymsList = synonyms.map(t => window.GTAW.escapeHtml(t)).join('</strong>, <strong>');
+                infoHtml.push(`
+                    <div class="search-info-item search-info-synonyms">
+                        <span class="search-info-icon">🔍</span>
+                        <span>${window.GTAW.__('search.also_searching')} <strong>${synonymsList}</strong></span>
+                    </div>
+                `);
+            }
+        }
+        // English synonym expansion
+        else if (hasSynonyms) {
+            const synonyms = meta.synonyms_used.slice(0, 5);
+            const synonymsList = synonyms.map(t => window.GTAW.escapeHtml(t)).join('</strong>, <strong>');
+            infoHtml.push(`
+                <div class="search-info-item search-info-synonyms">
+                    <span class="search-info-icon">🔍</span>
+                    <span>${window.GTAW.__('search.also_searching')} <strong>${synonymsList}</strong></span>
+                </div>
+            `);
+        }
+        
+        // Typo correction ("Did you mean?") - only show when zero results
+        if (hasTypoCorrection && hasZeroResults) {
+            const corrections = Object.entries(meta.did_you_mean)
+                .map(([typo, suggestion]) => `<a href="?q=${encodeURIComponent(suggestion)}" onclick="App.setSearch('${window.GTAW.escapeHtml(suggestion)}'); return false;"><strong>${window.GTAW.escapeHtml(suggestion)}</strong></a>`)
+                .join(' or ');
+            infoHtml.push(`
+                <div class="search-info-item search-info-typo">
+                    <span class="search-info-icon">✏️</span>
+                    <span>${window.GTAW.__('search.did_you_mean', { suggestions: corrections })}</span>
+                </div>
+            `);
+        }
+        
+        // Category suggestion (when no results)
+        if (hasSuggestedCategory) {
+            const category = meta.suggested_category;
+            const categoryLink = `<a href="?category=${window.GTAW.escapeHtml(category)}" onclick="App.setCategory('${window.GTAW.escapeHtml(category)}'); return false;"><strong>${window.GTAW.escapeHtml(category)}</strong></a>`;
+            const tryCategoryText = window.GTAW.__('search.try_category', { category: categoryLink });
+            infoHtml.push(`
+                <div class="search-info-item search-info-suggestion">
+                    <span class="search-info-icon">💡</span>
+                    <span>${tryCategoryText}</span>
+                </div>
+            `);
+        }
+        
+        searchInfo.innerHTML = `
+            <div class="search-info-content">
+                ${infoHtml.join('')}
+            </div>
+            <button class="search-info-dismiss" onclick="App.dismissSearchInfo()" title="${window.GTAW.__('search.dismiss')}">×</button>
+        `;
+    },
+    
+    /**
+     * Dismiss search info banner
+     */
+    dismissSearchInfo() {
+        const searchInfo = document.getElementById('search-info');
+        if (searchInfo) {
+            searchInfo.classList.add('dismissed');
+            setTimeout(() => searchInfo.remove(), 200);
+        }
     },
 
     /**
@@ -1108,7 +1287,7 @@ const App = {
                 }
             } catch (error) {
                 console.error('Failed to load furniture item:', error);
-                this.toast('Failed to load furniture item', 'error');
+                this.toast(window.GTAW.__('error.failed_to_load'), 'error');
             }
         }
     },
@@ -1210,16 +1389,16 @@ const App = {
                         <button 
                             class="btn-copy" 
                             data-name="${this.escapeHtml(item.name)}"
-                            title="Copy /sf command"
+                            title="${GTAW.__('card.copy_command')}"
                         >
                             <span class="btn-icon">📋</span>
-                            <span class="btn-text">Copy</span>
+                            <span class="btn-text">${GTAW.__('card.copy')}</span>
                         </button>
                         <button 
                             class="btn-favorite ${isFav ? 'active' : ''}" 
                             data-id="${item.id}"
-                            title="${isFav ? 'Remove from favorites' : 'Add to favorites'}"
-                            aria-label="${isFav ? 'Remove from favorites' : 'Add to favorites'}"
+                            title="${isFav ? GTAW.__('favorites.remove') : GTAW.__('favorites.add')}"
+                            aria-label="${isFav ? GTAW.__('favorites.remove') : GTAW.__('favorites.add')}"
                         >
                             ${isFav ? '❤️' : '🤍'}
                         </button>
@@ -1512,7 +1691,7 @@ const App = {
             return `
                 <span class="active-tag" style="--tag-color: ${tag.color}">
                     ${this.escapeHtml(tag.name)}
-                    <span class="remove-tag" onclick="App.toggleTagFilter('${slug}')" title="Remove">×</span>
+                    <span class="remove-tag" onclick="App.toggleTagFilter('${slug}')" title="${window.GTAW.__('filter.remove_tag')}">×</span>
                 </span>
             `;
         }).join('');
@@ -1542,7 +1721,7 @@ const App = {
 
         if (total_pages <= 1) {
             this.elements.pagination.innerHTML = total > 0 
-                ? `<span class="page-info">${total} item${total === 1 ? '' : 's'}</span>`
+                ? `<span class="page-info">${window.GTAW.__('pagination.items', { total, count: total })}</span>`
                 : '';
             return;
         }
@@ -1551,17 +1730,17 @@ const App = {
             <button 
                 ${page <= 1 ? 'disabled' : ''} 
                 onclick="App.goToPage(${page - 1})"
-                aria-label="Previous page"
+                aria-label="${window.GTAW.__('pagination.previous_page')}"
             >
-                ← Previous
+                ${window.GTAW.__('pagination.previous')}
             </button>
-            <span class="page-info">Page ${page} of ${total_pages} (${total} items)</span>
+            <span class="page-info">${window.GTAW.__('pagination.page_info', { page, total_pages, total })}</span>
             <button 
                 ${page >= total_pages ? 'disabled' : ''} 
                 onclick="App.goToPage(${page + 1})"
-                aria-label="Next page"
+                aria-label="${window.GTAW.__('pagination.next_page')}"
             >
-                Next →
+                ${window.GTAW.__('pagination.next')}
             </button>
         `;
     },

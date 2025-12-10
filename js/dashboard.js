@@ -27,6 +27,7 @@ const Dashboard = {
         this.initThemeToggle();
         this.initForms();
         this.initCollectionReordering();
+        this.initCategoryTagSync();
         this.recentlyViewed.init();
         
         window.GTAW.tableSearch.init();
@@ -110,19 +111,19 @@ const Dashboard = {
                         }
                     } else {
                         this.toast(result.error || 'An error occurred', 'error');
-                        if (submitBtn) {
-                            submitBtn.disabled = false;
-                            submitBtn.textContent = submitBtn.dataset.originalText || 'Save';
-                        }
-                    }
-                } catch (error) {
-                    console.error('Form submission error:', error);
-                    this.toast('Network error. Please try again.', 'error');
-                    if (submitBtn) {
-                        submitBtn.disabled = false;
-                        submitBtn.textContent = submitBtn.dataset.originalText || 'Save';
-                    }
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = submitBtn.dataset.originalText || window.GTAW.__('form.save');
                 }
+            }
+        } catch (error) {
+            console.error('Form submission error:', error);
+            this.toast(window.GTAW.__('error.network_retry'), 'error');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = submitBtn.dataset.originalText || window.GTAW.__('form.save');
+            }
+        }
             });
             
             // Store original button text
@@ -169,9 +170,9 @@ const Dashboard = {
                 if (row) {
                     row.remove();
                 }
-                this.toast('Removed from favorites', 'success');
+                this.toast(window.GTAW.__('favorites.removed'), 'success');
             } else {
-                this.toast(result.error || 'Failed to remove', 'error');
+                this.toast(result.error || window.GTAW.__('error.generic'), 'error');
             }
         } catch (error) {
             console.error('Remove favorite error:', error);
@@ -188,7 +189,7 @@ const Dashboard = {
             const result = await response.json();
             
             if (!result.success || !result.data.length) {
-                this.toast('No favorites to export', 'info');
+                this.toast(window.GTAW.__('favorites.nothing_to_export'), 'info');
                 return;
             }
             
@@ -203,10 +204,10 @@ const Dashboard = {
             a.click();
             URL.revokeObjectURL(url);
             
-            this.toast('Exported ' + result.data.length + ' items', 'success');
+            this.toast(window.GTAW.__('favorites.exported', { count: result.data.length }), 'success');
         } catch (error) {
             console.error('Export error:', error);
-            this.toast('Export failed', 'error');
+            this.toast(window.GTAW.__('error.generic'), 'error');
         }
     },
 
@@ -215,11 +216,11 @@ const Dashboard = {
      */
     async clearAllFavorites(count) {
         if (count === 0) {
-            this.toast('No favorites to clear', 'info');
+            this.toast(window.GTAW.__('favorites.nothing_to_clear'), 'info');
             return;
         }
         
-        if (!confirm(`Remove ALL ${count} favorites? This cannot be undone.`)) {
+        if (!confirm(window.GTAW.__('favorites.confirm_clear', { count }))) {
             return;
         }
         
@@ -234,15 +235,15 @@ const Dashboard = {
             const result = await response.json();
             
             if (result.success) {
-                this.toast(`Cleared ${result.data.count} favorites`, 'success');
+                this.toast(window.GTAW.__('favorites.cleared', { count: result.data.count }), 'success');
                 // Reload page to show empty state
                 window.location.reload();
             } else {
-                this.toast(result.error || 'Failed to clear favorites', 'error');
+                this.toast(result.error || window.GTAW.__('error.generic'), 'error');
             }
         } catch (error) {
             console.error('Clear favorites error:', error);
-            this.toast('Network error', 'error');
+            this.toast(window.GTAW.__('error.network'), 'error');
         }
     },
 
@@ -258,7 +259,7 @@ const Dashboard = {
      * Delete collection
      */
     async deleteCollection(id, name) {
-        if (!confirm(`Delete collection "${name}"? This cannot be undone.`)) return;
+        if (!confirm(window.GTAW.__('collections.confirm_delete', { name }))) return;
         
         const csrfToken = this.getCsrfToken();
         try {
@@ -277,13 +278,13 @@ const Dashboard = {
             if (result.success) {
                 const row = document.querySelector(`tr[data-id="${id}"]`);
                 if (row) row.remove();
-                this.toast('Collection deleted', 'success');
+                this.toast(window.GTAW.__('collections.deleted'), 'success');
             } else {
-                this.toast(result.error || 'Failed to delete', 'error');
+                this.toast(result.error || window.GTAW.__('error.generic'), 'error');
             }
         } catch (error) {
             console.error('Delete collection error:', error);
-            this.toast('Network error', 'error');
+            this.toast(window.GTAW.__('error.network'), 'error');
         }
     },
 
@@ -295,7 +296,7 @@ const Dashboard = {
         const url = `${window.location.origin}/collection.php?user=${encodeURIComponent(username)}&slug=${encodeURIComponent(slug)}`;
         
         navigator.clipboard.writeText(url).then(() => {
-                this.toast('Collection link copied!', 'success');
+                this.toast(window.GTAW.__('collections.link_copied'), 'success');
         }).catch(() => {
             // Fallback
             prompt('Share this link:', url);
@@ -306,7 +307,7 @@ const Dashboard = {
      * Duplicate a collection
      */
     async duplicateCollection(id, name) {
-        if (!confirm(`Create a copy of "${name}"?`)) {
+        if (!confirm(window.GTAW.__('collections.confirm_duplicate', { name }))) {
             return;
         }
         
@@ -323,15 +324,15 @@ const Dashboard = {
             const result = await response.json();
             
             if (result.success) {
-                this.toast(`Collection duplicated: ${result.data.name}`, 'success');
+                this.toast(window.GTAW.__('collections.duplicated', { name: result.data.name }), 'success');
                 // Redirect to edit the new collection
                 window.location.href = `/dashboard/?page=collections&action=edit&id=${result.data.id}`;
             } else {
-                this.toast(result.error || 'Failed to duplicate collection', 'error');
+                this.toast(result.error || window.GTAW.__('error.generic'), 'error');
             }
         } catch (error) {
             console.error('Duplicate collection error:', error);
-            this.toast('Network error', 'error');
+            this.toast(window.GTAW.__('error.network'), 'error');
         }
     },
 
@@ -344,7 +345,7 @@ const Dashboard = {
             const result = await response.json();
             
             if (!result.success || !result.data.length) {
-            this.toast('No items in collection to export', 'info');
+                this.toast(window.GTAW.__('collections.nothing_to_export'), 'info');
                 return;
             }
             
@@ -358,10 +359,10 @@ const Dashboard = {
             a.click();
             URL.revokeObjectURL(url);
             
-            this.toast('Exported ' + result.data.length + ' items', 'success');
+            this.toast(window.GTAW.__('favorites.exported', { count: result.data.length }), 'success');
         } catch (error) {
             console.error('Export error:', error);
-            this.toast('Export failed', 'error');
+            this.toast(window.GTAW.__('favorites.export_failed'), 'error');
         }
     },
 
@@ -369,7 +370,7 @@ const Dashboard = {
      * Remove item from collection
      */
     async removeFromCollection(collectionId, furnitureId) {
-        if (!confirm('Remove this item from the collection?')) return;
+        if (!confirm(window.GTAW.__('collections.confirm_remove_item'))) return;
         
         const csrfToken = this.getCsrfToken();
         try {
@@ -391,13 +392,13 @@ const Dashboard = {
             if (result.success) {
                 const row = document.querySelector(`tr[data-id="${furnitureId}"]`);
                 if (row) row.remove();
-                this.toast('Removed from collection', 'success');
+                this.toast(window.GTAW.__('collections.removed'), 'success');
             } else {
-                this.toast(result.error || 'Failed to remove', 'error');
+                this.toast(result.error || window.GTAW.__('error.generic'), 'error');
             }
         } catch (error) {
             console.error('Remove from collection error:', error);
-            this.toast('Network error', 'error');
+            this.toast(window.GTAW.__('error.network'), 'error');
         }
     },
 
@@ -405,7 +406,7 @@ const Dashboard = {
      * Cancel submission
      */
     async cancelSubmission(id) {
-        if (!confirm('Cancel this submission? This cannot be undone.')) return;
+        if (!confirm(window.GTAW.__('submissions.confirm_cancel'))) return;
         
         const csrfToken = this.getCsrfToken();
         try {
@@ -422,14 +423,14 @@ const Dashboard = {
             const result = await response.json();
             
             if (result.success) {
-                this.toast('Submission cancelled', 'success');
+                this.toast(window.GTAW.__('submissions.cancelled'), 'success');
                 window.location.href = '/dashboard/?page=submissions';
             } else {
-                this.toast(result.error || 'Failed to cancel', 'error');
+                this.toast(result.error || window.GTAW.__('error.generic'), 'error');
             }
         } catch (error) {
             console.error('Cancel submission error:', error);
-            this.toast('Network error', 'error');
+            this.toast(window.GTAW.__('error.network'), 'error');
         }
     },
 
@@ -574,13 +575,13 @@ const Dashboard = {
             const result = await response.json();
             
             if (result.success) {
-                this.toast('Items reordered successfully');
+                this.toast(window.GTAW.__('collections.reordered'));
             } else {
-                this.toast(result.error || 'Failed to reorder items', 'error');
+                this.toast(result.error || window.GTAW.__('collections.reorder_failed'), 'error');
             }
         } catch (error) {
             console.error('Error reordering items:', error);
-            this.toast('Failed to reorder items', 'error');
+            this.toast(window.GTAW.__('collections.reorder_failed'), 'error');
         }
     },
 
@@ -676,6 +677,120 @@ const Dashboard = {
      */
     escapeHtml(text) {
         return window.GTAW ? window.GTAW.escapeHtml(text) : String(text ?? '');
+    },
+
+    /**
+     * Initialize category-tag synchronization for submission forms
+     * When category selection changes, loads category-specific tags
+     */
+    initCategoryTagSync() {
+        const categoryCheckboxes = document.querySelectorAll('input[name="category_ids[]"]');
+        const tagsContainer = document.getElementById('tags-container');
+        
+        if (!categoryCheckboxes.length || !tagsContainer) return;
+        
+        // Store currently selected tag IDs
+        this.selectedTagIds = new Set();
+        document.querySelectorAll('input[name="tags[]"]:checked').forEach(cb => {
+            this.selectedTagIds.add(cb.value);
+        });
+        
+        // Watch for category changes
+        categoryCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                this.loadCategorySpecificTags();
+            });
+        });
+        
+        // Initial load if categories are selected
+        const selectedCategories = Array.from(categoryCheckboxes)
+            .filter(cb => cb.checked)
+            .map(cb => cb.value);
+            
+        if (selectedCategories.length > 0) {
+            this.loadCategorySpecificTags();
+        }
+    },
+
+    /**
+     * Load and render category-specific tags
+     */
+    async loadCategorySpecificTags() {
+        const categoryCheckboxes = document.querySelectorAll('input[name="category_ids[]"]:checked');
+        const specificContainer = document.getElementById('category-specific-tags');
+        
+        if (!specificContainer) return;
+        
+        const categoryIds = Array.from(categoryCheckboxes).map(cb => cb.value);
+        
+        if (categoryIds.length === 0) {
+            specificContainer.innerHTML = '';
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api.php?action=tags/for-categories&category_ids=${categoryIds.join(',')}`);
+            const result = await response.json();
+            
+            if (!result.success) {
+                console.error('Failed to load category-specific tags');
+                return;
+            }
+            
+            const categorySpecificGroups = result.data?.category_specific?.groups || [];
+            
+            if (categorySpecificGroups.length === 0) {
+                specificContainer.innerHTML = '';
+                return;
+            }
+            
+            // Render category-specific tag groups
+            // Use same structure as regular tag groups for consistency
+            let html = '<h4>Category-Specific Tags</h4>';
+            
+            categorySpecificGroups.forEach(group => {
+                if (!group.tags || group.tags.length === 0) return;
+                
+                html += `
+                    <div class="tag-group-section" data-group-id="${group.id}">
+                        <h4>
+                            <span class="group-color-dot" style="background: ${this.escapeHtml(group.color)}"></span>
+                            ${this.escapeHtml(group.name)}
+                        </h4>
+                        <div class="checkbox-group">
+                `;
+                
+                group.tags.forEach(tag => {
+                    const isChecked = this.selectedTagIds.has(String(tag.id));
+                    html += `
+                        <label class="checkbox-item${isChecked ? ' checked' : ''}">
+                            <input type="checkbox" name="tags[]" value="${tag.id}"${isChecked ? ' checked' : ''}>
+                            <span>${this.escapeHtml(tag.name)}</span>
+                        </label>
+                    `;
+                });
+                
+                html += '</div></div>';
+            });
+            
+            specificContainer.innerHTML = html;
+            
+            // Re-bind checkbox styling events
+            specificContainer.querySelectorAll('.checkbox-item input').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    e.target.closest('.checkbox-item').classList.toggle('checked', e.target.checked);
+                    // Track selection
+                    if (e.target.checked) {
+                        this.selectedTagIds.add(e.target.value);
+                    } else {
+                        this.selectedTagIds.delete(e.target.value);
+                    }
+                });
+            });
+            
+        } catch (error) {
+            console.error('Error loading category-specific tags:', error);
+        }
     },
 };
 

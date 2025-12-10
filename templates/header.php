@@ -17,9 +17,15 @@ require_once __DIR__ . '/../includes/auth.php';
 $currentUser = getCurrentUser();
 $appName = config('app.name', 'GTAW Furniture Catalog');
 $pageTitle = isset($pageTitle) ? "{$pageTitle} - {$appName}" : $appName;
+
+// Get current locale and community
+$currentLocale = getCurrentLocale();
+$currentCommunity = getCurrentCommunity();
+$langCode = getCommunityLangCode($currentLocale);
+$communities = getSupportedCommunities();
 ?>
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="<?= e($langCode) ?>" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -30,6 +36,9 @@ $pageTitle = isset($pageTitle) ? "{$pageTitle} - {$appName}" : $appName;
     
     <!-- CSRF Token -->
     <meta name="csrf-token" content="<?= e(generateCsrfToken()) ?>">
+    
+    <!-- Current locale for JS -->
+    <meta name="locale" content="<?= e($currentLocale) ?>">
     
     <!-- Preconnect for external resources -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -54,7 +63,7 @@ $pageTitle = isset($pageTitle) ? "{$pageTitle} - {$appName}" : $appName;
     </script>
 </head>
 <body>
-    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <a href="#main-content" class="skip-link"><?= e(__('nav.skip_to_content')) ?></a>
     
     <header class="site-header">
         <div class="container">
@@ -64,17 +73,46 @@ $pageTitle = isset($pageTitle) ? "{$pageTitle} - {$appName}" : $appName;
             </a>
             
             <div class="header-actions">
-                <button class="theme-toggle" id="theme-toggle" title="Toggle theme" aria-label="Toggle dark/light theme">
+                <!-- Community/Locale Switcher -->
+                <div class="community-switcher" id="community-switcher">
+                    <button class="community-toggle" id="community-toggle" 
+                            title="<?= e(__('community.switch')) ?>" 
+                            aria-label="<?= e(__('community.switch')) ?>"
+                            aria-expanded="false"
+                            aria-haspopup="true">
+                        <?= getCommunityFlag($currentLocale) ?>
+                        <span class="community-toggle-arrow">▼</span>
+                    </button>
+                    <div class="community-dropdown" id="community-dropdown" role="menu">
+                        <?php foreach ($communities as $comm): ?>
+                        <a href="?set_community=<?= e($comm['id']) ?>" 
+                           class="community-option <?= $comm['id'] === $currentCommunity ? 'active' : '' ?>"
+                           role="menuitem"
+                           <?php if (!$comm['oauth_configured']): ?>
+                           title="<?= e(__('login.oauth_not_configured')) ?>"
+                           <?php endif; ?>>
+                            <span class="community-flag"><?= $comm['flag'] ?></span>
+                            <span class="community-name"><?= e($comm['short_name']) ?></span>
+                            <?php if ($comm['id'] === $currentCommunity): ?>
+                            <span class="community-check">✓</span>
+                            <?php endif; ?>
+                        </a>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                
+                <button class="theme-toggle" id="theme-toggle" title="<?= e(__('theme.toggle')) ?>" aria-label="<?= e(__('theme.toggle')) ?>">
                     <span class="icon-sun">☀️</span>
                     <span class="icon-moon">🌙</span>
                 </button>
+                
                 <?php if ($currentUser): ?>
-                    <a href="/dashboard/" class="btn-dashboard" title="My Dashboard">
-                        📊 Dashboard
+                    <a href="/dashboard/" class="btn-dashboard" title="<?= e(__('nav.dashboard')) ?>">
+                        📊 <?= e(__('nav.dashboard')) ?>
                     </a>
                 <?php else: ?>
-                    <a href="/login.php" class="btn-login">
-                        Login with GTA World
+                    <a href="/login.php?community=<?= e($currentCommunity) ?>" class="btn-login">
+                        <?= e(__('nav.login')) ?>
                     </a>
                 <?php endif; ?>
             </div>
@@ -82,4 +120,3 @@ $pageTitle = isset($pageTitle) ? "{$pageTitle} - {$appName}" : $appName;
     </header>
     
     <main id="main-content">
-

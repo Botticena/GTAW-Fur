@@ -67,22 +67,53 @@ if (session_status() === PHP_SESSION_NONE) {
 // Load database connection
 require_once __DIR__ . '/db.php';
 
+// Load utility functions (needed by settings.php for cache functions)
+require_once __DIR__ . '/utils.php';
+
 // Load CSRF helpers
 require_once __DIR__ . '/csrf.php';
+
+// Load community helpers (multi-community support)
+require_once __DIR__ . '/community.php';
+
+// Load i18n helpers (translations)
+require_once __DIR__ . '/i18n.php';
+
+// Load settings helpers (database-backed configuration)
+require_once __DIR__ . '/settings.php';
+
+// Handle community/locale switching early
+handleCommunitySwitch();
+
+// Check for maintenance mode (skip for admin pages and API)
+checkMaintenanceMode();
 
 // ============================================
 // APPLICATION CONSTANTS
 // ============================================
 
 /**
- * Maximum number of items per page in pagination
+ * Get maximum items per page from settings
+ * Falls back to 50 if settings not available
  */
-const MAX_ITEMS_PER_PAGE = 50;
+function getMaxItemsPerPage(): int
+{
+    return (int) getSetting('app.max_items_per_page', 50);
+}
+
+/**
+ * Get default items per page from settings
+ * Falls back to 24 if settings not available
+ */
+function getDefaultItemsPerPage(): int
+{
+    return (int) getSetting('app.items_per_page', 24);
+}
 
 /**
  * Minimum search query length (characters)
  */
-const MIN_SEARCH_LENGTH = 2;
+const MIN_SEARCH_LENGTH = 3;
 
 /**
  * Maximum image file size in bytes (10MB)
@@ -317,5 +348,56 @@ function getInputBool(array $source, string $key, bool $default = false): bool
     
     // Handle string/numeric representations
     return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? $default;
+}
+
+/**
+ * Check if maintenance mode is enabled and redirect if necessary
+ * 
+ * Allows access for:
+ * - Admin pages (/admin/)
+ * - Admin users (logged in with role = 'admin')
+ * - The maintenance page itself
+ */
+function checkMaintenanceMode(): void
+{
+    // Skip check if settings table doesn't exist yet (fresh install)
+    if (!settingsTableExists()) {
+        return;
+    }
+    
+    // Check if maintenance mode is enabled
+    if (!isMaintenanceMode()) {
+        return;
+    }
+    
+    // Get current request path
+    $requestUri = $_SERVER['REQUEST_URI'] ?? '/';
+    $path = parse_url($requestUri, PHP_URL_PATH);
+    
+    // Allow access to admin panel
+    if (str_starts_with($path, '/admin')) {
+        return;
+    }
+    
+    // Allow access to maintenance page itself
+    if ($path === '/maintenance.php' || $path === '/maintenance') {
+        return;
+    }
+    
+    // Allow access for logged-in admins
+    if (isset($_SESSION['user_id']) && isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
+        return;
+    }
+    
+    // Allow API calls from admin context
+    if (isset($_SERVER['HTTP_X_ADMIN_REQUEST'])) {
+        return;
+    }
+    
+    // Redirect to maintenance page
+    header('HTTP/1.1 503 Service Unavailable');
+    header('Retry-After: 3600');
+    header('Location: /maintenance.php');
+    exit;
 }
 

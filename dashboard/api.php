@@ -83,10 +83,17 @@ try {
                         jsonError('Description is too long (maximum 5000 characters)');
                     }
                     
+                    $isPublic = getInputBool($input, 'is_public', true);
+                    
+                    // Check if public collections feature is enabled
+                    if ($isPublic && !isFeatureEnabled('collections_public')) {
+                        jsonError('Public collections are currently disabled', 403);
+                    }
+                    
                     $data = [
                         'name' => $name,
                         'description' => $description !== '' ? $description : null,
-                        'is_public' => getInputBool($input, 'is_public', true),
+                        'is_public' => $isPublic,
                     ];
 
                     $id = createCollection($pdo, $userId, $data);
@@ -119,7 +126,15 @@ try {
                 }
                 $data['description'] = $description !== '' ? $description : null;
             }
-            $data['is_public'] = getInputBool($input, 'is_public', false);
+            
+            $isPublic = getInputBool($input, 'is_public', false);
+            
+            // Check if public collections feature is enabled
+            if ($isPublic && !isFeatureEnabled('collections_public')) {
+                jsonError('Public collections are currently disabled', 403);
+            }
+            
+            $data['is_public'] = $isPublic;
 
             try {
                 updateCollection($pdo, $id, $data);
@@ -343,6 +358,11 @@ try {
 
         case 'submissions/create':
             requireMethod('POST');
+
+            // Check if submissions feature is enabled
+            if (!isFeatureEnabled('submissions_enabled')) {
+                jsonError('Submissions are currently disabled', 403);
+            }
 
             // Rate limiting for submission creation (per user)
             withRateLimit(

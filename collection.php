@@ -48,6 +48,11 @@ try {
     throw new RuntimeException('Database connection not available', 0, $e);
 }
 
+// Check if public collections feature is enabled
+if (!isFeatureEnabled('collections_public')) {
+    renderCollectionNotFound();
+}
+
 $collection = getPublicCollection($pdo, $username, $slug);
 
 if (!$collection) {

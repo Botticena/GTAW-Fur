@@ -75,8 +75,15 @@ $pageTitle = isset($pageTitle) ? "{$pageTitle} - Admin" : "Admin - {$appName}";
                         </a>
                     </li>
                     
+                    <?php if (isMasterAdmin()): ?>
                     <li class="admin-nav-divider"></li>
                     
+                    <li>
+                        <a href="/admin/?page=synonyms" class="<?= $currentPage === 'synonyms' ? 'active' : '' ?>">
+                            <span class="nav-icon">🔤</span>
+                            Synonyms
+                        </a>
+                    </li>
                     <li>
                         <a href="/admin/?page=import" class="<?= $currentPage === 'import' ? 'active' : '' ?>">
                             <span class="nav-icon">📥</span>
@@ -91,6 +98,7 @@ $pageTitle = isset($pageTitle) ? "{$pageTitle} - Admin" : "Admin - {$appName}";
                     </li>
                     
                     <li class="admin-nav-divider"></li>
+                    <?php endif; ?>
                     
                     <li>
                         <a href="/admin/?page=users" class="<?= $currentPage === 'users' ? 'active' : '' ?>">
@@ -117,7 +125,21 @@ $pageTitle = isset($pageTitle) ? "{$pageTitle} - Admin" : "Admin - {$appName}";
                         </a>
                     </li>
                     
+                    <?php if (isMasterAdmin()): ?>
                     <li class="admin-nav-divider"></li>
+                    
+                    <li>
+                        <a href="/admin/?page=settings" class="<?= $currentPage === 'settings' ? 'active' : '' ?>">
+                            <span class="nav-icon">⚙️</span>
+                            Settings
+                            <?php if (settingsTableExists() && isMaintenanceMode()): ?>
+                            <span class="nav-badge" style="background: var(--warning);">!</span>
+                            <?php endif; ?>
+                        </a>
+                    </li>
+                    
+                    <li class="admin-nav-divider"></li>
+                    <?php endif; ?>
                     
                     <li>
                         <a href="/" target="_blank">

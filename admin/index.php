@@ -71,7 +71,7 @@ switch ($page) {
         if ($action === 'edit' && $id > 0) {
             renderTagGroupEdit($pdo, $id);
         } elseif ($action === 'add') {
-            renderTagGroupAdd();
+            renderTagGroupAdd($pdo);
         } else {
             renderTagGroupList($pdo);
         }
@@ -99,11 +99,33 @@ switch ($page) {
         }
         break;
     
+    case 'settings':
+        requireMasterAdmin();
+        renderSettings($pdo);
+        break;
+    
+    case 'synonyms':
+        requireMasterAdmin();
+        if ($action === 'edit' && $id > 0) {
+            renderSynonymEdit($pdo, $id);
+        } elseif ($action === 'add') {
+            renderSynonymAdd();
+        } elseif ($action === 'analytics') {
+            renderSearchAnalytics($pdo);
+        } elseif ($action === 'discover') {
+            renderSynonymAutoDiscovery($pdo);
+        } else {
+            renderSynonymList($pdo);
+        }
+        break;
+    
     case 'import':
+        requireMasterAdmin();
         renderImport();
         break;
     
     case 'export':
+        requireMasterAdmin();
         renderExport();
         break;
     
@@ -292,9 +314,11 @@ function renderFurnitureList(PDO $pdo): void
 
     if ($search !== '') {
         // Admin search across all furniture using server-side search
-        $result = searchFurniture($pdo, $search, $currentPage, 50, null, true);
+        $perPage = getSetting('app.items_per_page', 50);
+        $result = searchFurniture($pdo, $search, $currentPage, $perPage, null, true);
     } else {
-        $result = getFurnitureList($pdo, $currentPage, 50, $categoryFilter);
+        $perPage = getSetting('app.items_per_page', 50);
+        $result = getFurnitureList($pdo, $currentPage, $perPage, $categoryFilter);
     }
 
     $items      = $result['items'];
@@ -481,9 +505,10 @@ function renderFurnitureAdd(PDO $pdo): void
                 </section>
                 
                 <!-- Tags Panel -->
-                <section class="tags-panel">
+                <section class="tags-panel" id="tags-container">
                     <h3 class="tags-panel-header">Tags</h3>
                     
+                    <!-- General Tags -->
                     <?php foreach ($tagsGrouped['groups'] as $group): ?>
                     <?php if (!empty($group['tags'])): ?>
                     <div class="tag-group-section">
@@ -503,22 +528,8 @@ function renderFurnitureAdd(PDO $pdo): void
                     <?php endif; ?>
                     <?php endforeach; ?>
                     
-                    <?php if (!empty($tagsGrouped['ungrouped'])): ?>
-                    <div class="tag-group-section">
-                        <h4>
-                            <span class="group-color-dot" style="background: #6b7280"></span>
-                            Uncategorized
-                        </h4>
-                        <div class="checkbox-group">
-                            <?php foreach ($tagsGrouped['ungrouped'] as $tag): ?>
-                            <label class="checkbox-item">
-                                <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>">
-                                <span><?= e($tag['name']) ?></span>
-                            </label>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                    <?php endif; ?>
+                    <!-- Category-Specific Tags (loaded dynamically) -->
+                    <div id="category-specific-tags"></div>
                 </section>
             </div>
         </div>
@@ -607,9 +618,10 @@ function renderFurnitureEdit(PDO $pdo, int $id): void
                 </section>
                 
                 <!-- Tags Panel -->
-                <section class="tags-panel">
+                <section class="tags-panel" id="tags-container">
                     <h3 class="tags-panel-header">Tags</h3>
                     
+                    <!-- General Tags -->
                     <?php foreach ($tagsGrouped['groups'] as $group): ?>
                     <?php if (!empty($group['tags'])): ?>
                     <div class="tag-group-section">
@@ -629,22 +641,8 @@ function renderFurnitureEdit(PDO $pdo, int $id): void
                     <?php endif; ?>
                     <?php endforeach; ?>
                     
-                    <?php if (!empty($tagsGrouped['ungrouped'])): ?>
-                    <div class="tag-group-section">
-                        <h4>
-                            <span class="group-color-dot" style="background: #6b7280"></span>
-                            Uncategorized
-                        </h4>
-                        <div class="checkbox-group">
-                            <?php foreach ($tagsGrouped['ungrouped'] as $tag): ?>
-                            <label class="checkbox-item <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>">
-                                <input type="checkbox" name="tags[]" value="<?= $tag['id'] ?>" <?= in_array($tag['id'], $itemTagIds) ? 'checked' : '' ?>>
-                                <span><?= e($tag['name']) ?></span>
-                            </label>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                    <?php endif; ?>
+                    <!-- Category-Specific Tags (loaded dynamically) -->
+                    <div id="category-specific-tags"></div>
                 </section>
             </div>
         </div>
@@ -833,9 +831,9 @@ function renderTagGroupList(PDO $pdo): void
                 <tr>
                     <th style="width: 40px">⋮⋮</th>
                     <th>Name</th>
+                    <th>Type</th>
                     <th>Color</th>
-                    <th>Tags Count</th>
-                    <th>Sort Order</th>
+                    <th>Tags</th>
                     <th style="width: 140px">Actions</th>
                 </tr>
             </thead>
@@ -848,6 +846,7 @@ function renderTagGroupList(PDO $pdo): void
                     $tagCounts[$gid] = ($tagCounts[$gid] ?? 0) + 1;
                 }
                 foreach ($groups as $group): 
+                $isGeneral = !empty($group['is_general']);
                 ?>
                 <tr data-id="<?= $group['id'] ?>">
                     <td class="drag-handle">⋮⋮</td>
@@ -856,11 +855,17 @@ function renderTagGroupList(PDO $pdo): void
                         <strong><?= e($group['name']) ?></strong>
                     </td>
                     <td>
+                        <?php if ($isGeneral): ?>
+                        <span class="badge badge-success">🌐 General</span>
+                        <?php else: ?>
+                        <span class="badge">🏷️ Category</span>
+                        <?php endif; ?>
+                    </td>
+                    <td>
                         <span class="color-preview" style="background: <?= e($group['color']) ?>"></span>
                         <code><?= e($group['color']) ?></code>
                     </td>
                     <td><?= $tagCounts[$group['id']] ?? 0 ?></td>
-                    <td><?= $group['sort_order'] ?></td>
                     <td class="actions">
                         <a href="/admin/?page=tag-groups&action=edit&id=<?= $group['id'] ?>" class="btn btn-sm">Edit</a>
                         <button class="btn btn-sm btn-danger" 
@@ -880,8 +885,9 @@ function renderTagGroupList(PDO $pdo): void
     <?php
 }
 
-function renderTagGroupAdd(): void
+function renderTagGroupAdd(PDO $pdo): void
 {
+    $categories = getCategories($pdo);
     $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
@@ -913,6 +919,35 @@ function renderTagGroupAdd(): void
             <p class="form-help">Lower numbers appear first</p>
         </div>
         
+        <div class="form-group">
+            <label>Tag Group Type</label>
+            <div class="radio-group">
+                <label class="radio-item">
+                    <input type="radio" name="is_general" value="1" checked onchange="document.getElementById('category-selector').style.display='none'">
+                    <span>🌐 General</span>
+                    <small>Appears for all furniture regardless of category</small>
+                </label>
+                <label class="radio-item">
+                    <input type="radio" name="is_general" value="0" onchange="document.getElementById('category-selector').style.display='block'">
+                    <span>🏷️ Category-Specific</span>
+                    <small>Only appears when specific categories are selected</small>
+                </label>
+            </div>
+        </div>
+        
+        <div class="form-group" id="category-selector" style="display: none;">
+            <label>Link to Categories</label>
+            <p class="form-help">Select which categories this tag group should appear for</p>
+            <div class="checkbox-grid">
+                <?php foreach ($categories as $cat): ?>
+                <label class="checkbox-item">
+                    <input type="checkbox" name="category_ids[]" value="<?= $cat['id'] ?>">
+                    <span><?= e($cat['icon']) ?> <?= e($cat['name']) ?></span>
+                </label>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">Create Group</button>
             <a href="/admin/?page=tag-groups" class="btn">Cancel</a>
@@ -929,6 +964,10 @@ function renderTagGroupEdit(PDO $pdo, int $id): void
         return;
     }
     
+    $categories = getCategories($pdo);
+    $linkedCategories = getCategoriesForTagGroup($pdo, $id);
+    $linkedCategoryIds = array_column($linkedCategories, 'id');
+    $isGeneral = !empty($group['is_general']);
     $csrfToken = generateCsrfToken();
     ?>
     <div class="admin-header">
@@ -959,6 +998,63 @@ function renderTagGroupEdit(PDO $pdo, int $id): void
             <input type="number" id="sort_order" name="sort_order" min="0" value="<?= $group['sort_order'] ?>">
             <p class="form-help">Lower numbers appear first</p>
         </div>
+        
+        <div class="form-group">
+            <label>Tag Group Type</label>
+            <div class="alert alert-info" style="margin-bottom: var(--spacing-sm);">
+                <?php if ($isGeneral): ?>
+                <span class="badge badge-success">🌐 General Tag Group</span>
+                <p style="margin: var(--spacing-xs) 0 0 0; font-size: 0.875rem;">This tag group appears for all furniture items.</p>
+                <?php else: ?>
+                <span class="badge">🏷️ Category-Specific Tag Group</span>
+                <p style="margin: var(--spacing-xs) 0 0 0; font-size: 0.875rem;">This tag group only appears for selected categories.</p>
+                <?php endif; ?>
+            </div>
+            <p class="form-help">Type cannot be changed after creation. Create a new tag group if needed.</p>
+        </div>
+        
+        <?php if (!$isGeneral): ?>
+        <div class="form-group">
+            <label>Linked Categories</label>
+            <p class="form-help">This tag group appears when these categories are selected</p>
+            <div class="checkbox-grid">
+                <?php foreach ($categories as $cat): ?>
+                <?php $isLinked = in_array($cat['id'], $linkedCategoryIds); ?>
+                <label class="checkbox-item <?= $isLinked ? 'checked' : '' ?>">
+                    <input type="checkbox" name="category_ids[]" value="<?= $cat['id'] ?>" <?= $isLinked ? 'checked' : '' ?> onchange="toggleCategoryLink(<?= $id ?>, <?= $cat['id'] ?>, this.checked)">
+                    <span><?= e($cat['icon']) ?> <?= e($cat['name']) ?></span>
+                </label>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <script>
+        async function toggleCategoryLink(tagGroupId, categoryId, isLinked) {
+            const action = isLinked ? 'tag-groups/link-category' : 'tag-groups/unlink-category';
+            try {
+                const response = await fetch('/admin/api.php?action=' + action, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                    },
+                    body: JSON.stringify({
+                        tag_group_id: tagGroupId,
+                        category_id: categoryId
+                    })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    window.GTAW?.toast(result.message || 'Updated', 'success');
+                } else {
+                    window.GTAW?.toast(result.error || 'Failed to update', 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                window.GTAW?.toast('Network error', 'error');
+            }
+        }
+        </script>
+        <?php endif; ?>
         
         <div class="form-actions">
             <button type="submit" class="btn btn-primary">Save Changes</button>
@@ -1167,7 +1263,8 @@ function renderTagEdit(PDO $pdo, int $id): void
 function renderUserList(PDO $pdo): void
 {
     $currentPage = max(1, getQueryInt('p', 1));
-    $result = getUsers($pdo, $currentPage, 50);
+    $perPage = getSetting('app.items_per_page', 50);
+    $result = getUsers($pdo, $currentPage, $perPage);
     $users = $result['items'];
     $pagination = $result['pagination'];
     ?>
@@ -1352,8 +1449,8 @@ function renderSubmissionList(PDO $pdo): void
                     </td>
                     <td>
                         <?= e($sub['data']['name'] ?? 'Untitled') ?>
-                        <?php if ($sub['type'] === SUBMISSION_TYPE_EDIT && $sub['furniture_name']): ?>
-                        <br><small class="text-muted">Editing: <?= e($sub['furniture_name']) ?></small>
+                        <?php if ($sub['type'] === SUBMISSION_TYPE_EDIT && !empty($sub['data']['edit_notes'])): ?>
+                        <br><small class="text-muted" title="<?= e($sub['data']['edit_notes']) ?>">📝 <?= e(mb_strimwidth($sub['data']['edit_notes'], 0, 50, '...')) ?></small>
                         <?php endif; ?>
                     </td>
                     <td>
@@ -1474,13 +1571,20 @@ function renderSubmissionDetail(PDO $pdo, int $id): void
                     </tr>
                 </thead>
                 <tbody>
-                    <tr class="<?= $originalFurniture['name'] !== $data['name'] ? 'changed' : '' ?>">
+                    <?php
+                    // Compare name
+                    $nameChanged = trim($originalFurniture['name'] ?? '') !== trim($data['name'] ?? '');
+                    ?>
+                    <tr class="<?= $nameChanged ? 'changed' : '' ?>">
                         <td><strong>Name</strong></td>
-                        <td><?= e($originalFurniture['name']) ?></td>
-                        <td><?= e($data['name'] ?? '') ?></td>
+                        <td><?= e($originalFurniture['name'] ?? '-') ?></td>
+                        <td><?= e($data['name'] ?? '-') ?></td>
                     </tr>
                     <?php 
+                    // Compare categories - sort both arrays for proper comparison
                     $originalCategoryNames = array_column($originalFurniture['categories'] ?? [], 'name');
+                    sort($originalCategoryNames);
+                    sort($submittedCategoryNames);
                     $categoriesChanged = $originalCategoryNames !== $submittedCategoryNames;
                     ?>
                     <tr class="<?= $categoriesChanged ? 'changed' : '' ?>">
@@ -1488,25 +1592,37 @@ function renderSubmissionDetail(PDO $pdo, int $id): void
                         <td><?= !empty($originalCategoryNames) ? e(implode(', ', $originalCategoryNames)) : '-' ?></td>
                         <td><?= !empty($submittedCategoryNames) ? e(implode(', ', $submittedCategoryNames)) : '-' ?></td>
                     </tr>
-                    <tr class="<?= $originalFurniture['price'] !== ($data['price'] ?? 0) ? 'changed' : '' ?>">
+                    <?php
+                    // Compare price - ensure both are integers
+                    $originalPrice = (int) ($originalFurniture['price'] ?? 0);
+                    $proposedPrice = (int) ($data['price'] ?? 0);
+                    $priceChanged = $originalPrice !== $proposedPrice;
+                    ?>
+                    <tr class="<?= $priceChanged ? 'changed' : '' ?>">
                         <td><strong>Price</strong></td>
-                        <td>$<?= number_format($originalFurniture['price']) ?></td>
-                        <td>$<?= number_format($data['price'] ?? 0) ?></td>
+                        <td>$<?= number_format($originalPrice) ?></td>
+                        <td>$<?= number_format($proposedPrice) ?></td>
                     </tr>
-                    <tr>
+                    <?php
+                    // Compare image URLs
+                    $originalImage = trim($originalFurniture['image_url'] ?? '');
+                    $proposedImage = trim($data['image_url'] ?? '');
+                    $imageChanged = $originalImage !== $proposedImage;
+                    ?>
+                    <tr class="<?= $imageChanged ? 'changed' : '' ?>">
                         <td><strong>Image</strong></td>
                         <td>
-                            <?php if ($originalFurniture['image_url']): ?>
-                            <img src="<?= e($originalFurniture['image_url']) ?>" alt="Current" class="thumb">
+                            <?php if ($originalImage): ?>
+                            <img src="<?= e($originalImage) ?>" alt="Current" class="thumb">
                             <?php else: ?>
                             <span class="text-muted">No image</span>
                             <?php endif; ?>
                         </td>
                         <td>
-                            <?php if (!empty($data['image_url'])): ?>
-                            <img src="<?= e($data['image_url']) ?>" alt="Proposed" class="thumb">
+                            <?php if ($proposedImage): ?>
+                            <img src="<?= e($proposedImage) ?>" alt="Proposed" class="thumb">
                             <?php else: ?>
-                            <span class="text-muted">No change</span>
+                            <span class="text-muted">No image</span>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -1809,28 +1925,1240 @@ function renderExport(): void
     <?php
 }
 
-function renderPagination(array $pagination, string $baseUrl): void
+/**
+ * Render Settings page
+ */
+function renderSettings(PDO $pdo): void
 {
-    if ($pagination['total_pages'] <= 1) {
+    $csrfToken = generateCsrfToken();
+    $settings = getAllSettingsWithMeta();
+    
+    // Group settings by prefix
+    $groupedSettings = [];
+    foreach ($settings as $setting) {
+        $parts = explode('.', $setting['key'], 2);
+        $group = $parts[0] ?? 'general';
+        $groupedSettings[$group][] = $setting;
+    }
+    
+    // Define group metadata
+    $groupMeta = [
+        'app' => ['title' => '⚙️ General Settings', 'description' => 'Core application settings'],
+        'features' => ['title' => '🔧 Feature Toggles', 'description' => 'Enable or disable features'],
+        'community' => ['title' => '🌍 Community Settings', 'description' => 'Configure GTA World communities'],
+    ];
+    ?>
+    <div class="admin-header">
+        <h1>⚙️ Settings</h1>
+    </div>
+    
+    <!-- Search/Filter Bar -->
+    <div class="table-filter-bar" style="margin-bottom: 1.5rem;">
+        <input type="search" 
+               id="settings-search"
+               class="table-search-input" 
+               placeholder="🔍 Search settings..."
+               aria-label="Search settings">
+        <div class="filter-buttons">
+            <select id="settings-group-filter" style="width: auto;">
+                <option value="">All Groups</option>
+                <?php foreach (array_keys($groupedSettings) as $group): ?>
+                <option value="<?= e($group) ?>"><?= e($groupMeta[$group]['title'] ?? ucfirst($group)) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+    </div>
+    
+    <form id="settings-form" class="admin-form settings-form" style="max-width: 900px;">
+        <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+        
+        <?php foreach ($groupedSettings as $group => $items): ?>
+        <?php $meta = $groupMeta[$group] ?? ['title' => ucfirst($group), 'description' => '']; ?>
+        <section class="settings-section" data-group="<?= e($group) ?>">
+            <h2><?= e($meta['title']) ?></h2>
+            <?php if (!empty($meta['description'])): ?>
+            <p><?= e($meta['description']) ?></p>
+            <?php endif; ?>
+            
+            <div class="settings-grid">
+                <?php foreach ($items as $setting): ?>
+                <?php
+                // Get validation rules for this setting
+                $validationRules = getSettingValidationRules($setting['key'], $setting['type']);
+                
+                // Get dependencies (settings that must be enabled for this to show)
+                $dependencies = getSettingDependencies($setting['key']);
+                $dependencyAttrs = '';
+                if (!empty($dependencies)) {
+                    $dependencyAttrs = ' data-depends-on="' . e(implode(',', $dependencies)) . '"';
+                }
+                ?>
+                <div class="setting-item" data-setting-key="<?= e($setting['key']) ?>" data-setting-label="<?= e(strtolower(formatSettingLabel($setting['key']))) ?>"<?= $dependencyAttrs ?>>
+                    <div class="setting-item-label">
+                        <label for="setting-<?= e($setting['key']) ?>">
+                            <?= e(formatSettingLabel($setting['key'])) ?>
+                        </label>
+                        <?php if (!empty($setting['description'])): ?>
+                        <p><?= e($setting['description']) ?></p>
+                        <?php endif; ?>
+                        <span class="setting-item-error" id="error-<?= e($setting['key']) ?>" style="display: none;"></span>
+                    </div>
+                    <div class="setting-item-control">
+                        <?php if ($setting['type'] === 'boolean'): ?>
+                        <label class="toggle-switch">
+                            <input type="checkbox" 
+                                   id="setting-<?= e($setting['key']) ?>"
+                                   name="settings[<?= e($setting['key']) ?>]" 
+                                   value="1"
+                                   <?= $setting['value'] ? 'checked' : '' ?>>
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-label"><?= $setting['value'] ? 'Enabled' : 'Disabled' ?></span>
+                        </label>
+                        <?php elseif ($setting['type'] === 'integer'): ?>
+                        <input type="number" 
+                               id="setting-<?= e($setting['key']) ?>"
+                               name="settings[<?= e($setting['key']) ?>]" 
+                               value="<?= e((string)$setting['value']) ?>"
+                               class="form-control"
+                               min="<?= e((string)($validationRules['min'] ?? '')) ?>"
+                               max="<?= e((string)($validationRules['max'] ?? '')) ?>"
+                               data-validation='<?= e(json_encode($validationRules)) ?>'>
+                        <?php elseif ($setting['is_sensitive']): ?>
+                        <input type="password" 
+                               id="setting-<?= e($setting['key']) ?>"
+                               name="settings[<?= e($setting['key']) ?>]" 
+                               value="<?= e((string)$setting['raw_value']) ?>"
+                               class="form-control"
+                               placeholder="••••••••"
+                               data-validation='<?= e(json_encode($validationRules)) ?>'>
+                        <?php else: ?>
+                        <input type="text" 
+                               id="setting-<?= e($setting['key']) ?>"
+                               name="settings[<?= e($setting['key']) ?>]" 
+                               value="<?= e((string)$setting['raw_value']) ?>"
+                               class="form-control"
+                               data-validation='<?= e(json_encode($validationRules)) ?>'>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </section>
+        <?php endforeach; ?>
+        
+        <div class="form-actions settings-form-actions">
+            <button type="submit" class="btn btn-primary btn-lg">
+                💾 Save Settings
+            </button>
+        </div>
+    </form>
+    
+    <script>
+    // Validation function
+    function validateSetting(input) {
+        const key = input.name.match(/settings\[(.+)\]/)[1];
+        const value = input.type === 'checkbox' ? (input.checked ? '1' : '0') : input.value;
+        const validation = JSON.parse(input.dataset.validation || '{}');
+        const errorElement = document.getElementById('error-' + key);
+        const settingItem = input.closest('.setting-item');
+        
+        // Clear previous error
+        if (errorElement) {
+            errorElement.style.display = 'none';
+            errorElement.textContent = '';
+        }
+        if (settingItem) {
+            settingItem.classList.remove('has-error');
+        }
+        
+        // Skip validation for checkboxes
+        if (input.type === 'checkbox') {
+            return true;
+        }
+        
+        // Integer validation
+        if (input.type === 'number') {
+            const numValue = parseInt(value, 10);
+            if (isNaN(numValue)) {
+                showError(key, 'Must be a valid number');
+                return false;
+            }
+            if (validation.min !== undefined && numValue < validation.min) {
+                showError(key, `Must be at least ${validation.min}`);
+                return false;
+            }
+            if (validation.max !== undefined && numValue > validation.max) {
+                showError(key, `Must be at most ${validation.max}`);
+                return false;
+            }
+        }
+        
+        // String validation
+        if (input.type === 'text' || input.type === 'password') {
+            if (validation.maxlength !== undefined && value.length > validation.maxlength) {
+                showError(key, `Must be at most ${validation.maxlength} characters`);
+                return false;
+            }
+            if (validation.minlength !== undefined && value.length < validation.minlength) {
+                showError(key, `Must be at least ${validation.minlength} characters`);
+                return false;
+            }
+            if (validation.pattern !== undefined) {
+                const regex = new RegExp(validation.pattern);
+                if (!regex.test(value)) {
+                    showError(key, validation.patternMessage || 'Invalid format');
+                    return false;
+                }
+            }
+        }
+        
+        return true;
+    }
+    
+    function showError(key, message) {
+        const errorElement = document.getElementById('error-' + key);
+        const settingItem = document.querySelector(`[data-setting-key="${key}"]`);
+        
+        if (errorElement) {
+            errorElement.textContent = message;
+            errorElement.style.display = 'block';
+        }
+        if (settingItem) {
+            settingItem.classList.add('has-error');
+        }
+    }
+    
+    function clearAllErrors() {
+        document.querySelectorAll('.setting-item-error').forEach(el => {
+            el.style.display = 'none';
+            el.textContent = '';
+        });
+        document.querySelectorAll('.setting-item').forEach(el => {
+            el.classList.remove('has-error');
+        });
+    }
+    
+    // Validate on input
+    document.querySelectorAll('#settings-form [name^="settings["]').forEach(input => {
+        if (input.type !== 'checkbox') {
+            input.addEventListener('blur', function() {
+                validateSetting(this);
+            });
+        }
+    });
+    
+    // Form submission
+    document.getElementById('settings-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        clearAllErrors();
+        
+        const form = e.target;
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        
+        // Validate all inputs
+        let isValid = true;
+        document.querySelectorAll('[name^="settings["]').forEach(input => {
+            if (!validateSetting(input)) {
+                isValid = false;
+            }
+        });
+        
+        if (!isValid) {
+            Admin.toast('Please fix the errors before saving', 'error');
+            return;
+        }
+        
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '⏳ Saving...';
+        
+        try {
+            // Collect form data
+            const formData = new FormData(form);
+            const settings = {};
+            const errors = {};
+            
+            // Process all settings inputs
+            document.querySelectorAll('[name^="settings["]').forEach(input => {
+                const key = input.name.match(/settings\[(.+)\]/)[1];
+                if (input.type === 'checkbox') {
+                    settings[key] = input.checked ? '1' : '0';
+                } else {
+                    settings[key] = input.value;
+                }
+            });
+            
+            const response = await fetch('/admin/api.php?action=settings/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': formData.get('csrf_token')
+                },
+                body: JSON.stringify({ settings })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                Admin.toast(result.message || 'Settings saved successfully', 'success');
+                // Update toggle labels
+                document.querySelectorAll('.toggle-switch input').forEach(input => {
+                    const label = input.parentElement.querySelector('.toggle-label');
+                    if (label) {
+                        label.textContent = input.checked ? 'Enabled' : 'Disabled';
+                    }
+                });
+                clearAllErrors();
+            } else {
+                // Show specific errors if provided
+                if (result.errors && Array.isArray(result.errors)) {
+                    result.errors.forEach(error => {
+                        // Try to extract key from error message
+                        const match = error.match(/^([^:]+):\s*(.+)$/);
+                        if (match) {
+                            showError(match[1], match[2]);
+                        }
+                    });
+                }
+                Admin.toast(result.error || 'Failed to save settings', 'error');
+            }
+        } catch (error) {
+            console.error('Error saving settings:', error);
+            Admin.toast('Network error. Please try again.', 'error');
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+        }
+    });
+    
+    // Update toggle labels on change
+    document.querySelectorAll('.toggle-switch input').forEach(input => {
+        input.addEventListener('change', function() {
+            const label = this.parentElement.querySelector('.toggle-label');
+            if (label) {
+                label.textContent = this.checked ? 'Enabled' : 'Disabled';
+            }
+            
+            // Handle dependencies - show/hide dependent settings
+            handleSettingDependencies(this);
+        });
+    });
+    
+    // Settings search/filter
+    const searchInput = document.getElementById('settings-search');
+    const groupFilter = document.getElementById('settings-group-filter');
+    
+    function filterSettings() {
+        const searchTerm = searchInput.value.toLowerCase();
+        const selectedGroup = groupFilter.value;
+        
+        document.querySelectorAll('.settings-section').forEach(section => {
+            const group = section.dataset.group;
+            let sectionVisible = false;
+            let visibleCount = 0;
+            
+            section.querySelectorAll('.setting-item').forEach(item => {
+                const key = item.dataset.settingKey;
+                const label = item.dataset.settingLabel || '';
+                const visible = 
+                    (selectedGroup === '' || group === selectedGroup) &&
+                    (searchTerm === '' || key.toLowerCase().includes(searchTerm) || label.includes(searchTerm));
+                
+                item.style.display = visible ? '' : 'none';
+                if (visible) {
+                    sectionVisible = true;
+                    visibleCount++;
+                }
+            });
+            
+            section.style.display = sectionVisible ? '' : 'none';
+            
+            // Update section header with count
+            const header = section.querySelector('h2');
+            if (header && searchTerm) {
+                const originalText = header.textContent;
+                const countMatch = originalText.match(/^(.+?)\s*\((\d+)\)$/);
+                const baseText = countMatch ? countMatch[1] : originalText;
+                header.textContent = `${baseText} (${visibleCount})`;
+            } else if (header) {
+                const countMatch = header.textContent.match(/^(.+?)\s*\((\d+)\)$/);
+                if (countMatch) {
+                    header.textContent = countMatch[1];
+                }
+            }
+        });
+    }
+    
+    if (searchInput) {
+        searchInput.addEventListener('input', filterSettings);
+    }
+    if (groupFilter) {
+        groupFilter.addEventListener('change', filterSettings);
+    }
+    
+    // Handle setting dependencies (show/hide based on other settings)
+    function handleSettingDependencies(changedInput) {
+        const changedKey = changedInput.name.match(/settings\[(.+)\]/)[1];
+        const isEnabled = changedInput.type === 'checkbox' ? changedInput.checked : (changedInput.value !== '' && changedInput.value !== '0');
+        
+        // Find all settings that depend on this one
+        document.querySelectorAll('.setting-item[data-depends-on]').forEach(item => {
+            const dependsOn = item.dataset.dependsOn.split(',');
+            if (dependsOn.includes(changedKey)) {
+                // Check if all dependencies are met
+                let allMet = true;
+                dependsOn.forEach(depKey => {
+                    const depInput = document.querySelector(`[name="settings[${depKey}]"]`);
+                    if (depInput) {
+                        const depEnabled = depInput.type === 'checkbox' ? depInput.checked : (depInput.value !== '' && depInput.value !== '0');
+                        if (!depEnabled) {
+                            allMet = false;
+                        }
+                    } else {
+                        allMet = false;
+                    }
+                });
+                
+                // Show/hide based on dependencies
+                item.style.display = allMet ? '' : 'none';
+            }
+        });
+    }
+    
+    // Initialize dependencies on page load
+    document.querySelectorAll('.toggle-switch input').forEach(input => {
+        handleSettingDependencies(input);
+    });
+    </script>
+    <?php
+}
+
+/**
+ * Format a setting key into a human-readable label
+ */
+function formatSettingLabel(string $key): string
+{
+    // Remove prefix
+    $parts = explode('.', $key);
+    array_shift($parts);
+    
+    // Join and convert to title case
+    $label = implode(' ', $parts);
+    $label = str_replace('_', ' ', $label);
+    $label = ucwords($label);
+    
+    return $label;
+}
+
+/**
+ * Get validation rules for a setting
+ * 
+ * @param string $key Setting key
+ * @param string $type Setting type
+ * @return array Validation rules
+ */
+function getSettingValidationRules(string $key, string $type): array
+{
+    $rules = [];
+    
+    // Integer-specific rules
+    if ($type === 'integer') {
+        switch ($key) {
+            case 'app.items_per_page':
+            case 'app.max_items_per_page':
+                $rules['min'] = 1;
+                $rules['max'] = 1000;
+                break;
+        }
+    }
+    
+    // String-specific rules
+    if ($type === 'string') {
+        switch ($key) {
+            case 'app.maintenance_message':
+                $rules['maxlength'] = 500;
+                break;
+        }
+    }
+    
+    return $rules;
+}
+
+/**
+ * Get dependencies for a setting (other settings that must be enabled for this to show)
+ * 
+ * @param string $key Setting key
+ * @return array Array of setting keys this depends on
+ */
+function getSettingDependencies(string $key): array
+{
+    $dependencies = [];
+    
+    // Maintenance message only shows when maintenance mode is enabled
+    if ($key === 'app.maintenance_message') {
+        $dependencies[] = 'app.maintenance_mode';
+    }
+    
+    return $dependencies;
+}
+
+// =============================================
+// SYNONYM MANAGEMENT VIEWS
+// =============================================
+
+function renderSynonymList(PDO $pdo): void
+{
+    $page = max(1, getQueryInt('p', 1));
+    $search = getQuery('search', '');
+    $perPage = 50;
+    
+    // Check if synonyms table exists
+    $tableExists = false;
+    try {
+        $stmt = $pdo->query("SHOW TABLES LIKE 'synonyms'");
+        $tableExists = $stmt->rowCount() > 0;
+    } catch (PDOException $e) {
+        $tableExists = false;
+    }
+    
+    $csrfToken = generateCsrfToken();
+    ?>
+    <div class="admin-header">
+        <h1>🔤 Synonyms</h1>
+        <div class="actions">
+            <a href="/admin/?page=synonyms&action=discover" class="btn">🔮 Auto-Discover</a>
+            <a href="/admin/?page=synonyms&action=analytics" class="btn">📊 Analytics</a>
+            <a href="/admin/?page=synonyms&action=add" class="btn btn-primary">+ Add Synonym</a>
+        </div>
+    </div>
+    
+    <?php if (!$tableExists): ?>
+    <div class="alert alert-warning">
+        <strong>⚠️ Database Migration Required</strong><br>
+        The synonyms table doesn't exist yet. Please run the migration:
+        <code>migrations/005_add_synonyms_and_search_log.sql</code>
+    </div>
+    
+    <div class="admin-card">
+        <h3>🔧 Setup Options</h3>
+        <p>Once the migration is run, you can:</p>
+        <ul>
+            <li><strong>Add manually:</strong> Create synonyms one-by-one</li>
+            <li><strong>Track analytics:</strong> See which searches have zero results</li>
+            <li><strong>Auto-discover:</strong> Use the auto-discovery feature to find new synonyms</li>
+        </ul>
+    </div>
+    <?php return; endif; ?>
+    
+    <div class="admin-toolbar">
+        <form method="GET" class="toolbar-search">
+            <input type="hidden" name="page" value="synonyms">
+            <input type="text" name="search" value="<?= e($search) ?>" placeholder="Search synonyms...">
+            <button type="submit" class="btn btn-sm">🔍</button>
+            <?php if ($search): ?>
+            <a href="/admin/?page=synonyms" class="btn btn-sm">Clear</a>
+            <?php endif; ?>
+        </form>
+    </div>
+    
+    <?php
+    $result = getSynonymsList($pdo, $page, $perPage, $search ?: null);
+    $synonyms = $result['items'];
+    $pagination = $result['pagination'];
+    
+    if (empty($synonyms)):
+    ?>
+    <div class="data-table-container">
+        <?= renderEmptyState(
+            '🔤',
+            $search ? 'No synonyms found' : 'No synonyms yet',
+            $search ? 'Try a different search term.' : 'Add synonyms to improve search results. You can add manually or use the auto-discovery feature.',
+            $search ? null : '/admin/?page=synonyms&action=add',
+            $search ? null : 'Add First Synonym'
+        ) ?>
+    </div>
+    <?php else: ?>
+    <div class="data-table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Canonical Term</th>
+                    <th>Synonym</th>
+                    <th style="width: 100px">Weight</th>
+                    <th style="width: 100px">Source</th>
+                    <th style="width: 80px">Usage</th>
+                    <th style="width: 80px">Active</th>
+                    <th style="width: 140px">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($synonyms as $syn): ?>
+                <tr>
+                    <td><strong><?= e($syn['canonical']) ?></strong></td>
+                    <td><code><?= e($syn['synonym']) ?></code></td>
+                    <td>
+                        <span class="weight-badge" style="opacity: <?= $syn['weight'] ?>">
+                            <?= number_format($syn['weight'] * 100) ?>%
+                        </span>
+                    </td>
+                    <td>
+                        <?php 
+                        $sourceColors = ['static' => 'secondary', 'admin' => 'primary', 'analytics' => 'success'];
+                        $sourceIcons = ['static' => '📄', 'admin' => '👤', 'analytics' => '📊'];
+                        ?>
+                        <span class="badge badge-<?= $sourceColors[$syn['source']] ?? 'secondary' ?>">
+                            <?= $sourceIcons[$syn['source']] ?? '' ?> <?= e($syn['source']) ?>
+                        </span>
+                    </td>
+                    <td><?= number_format($syn['usage_count']) ?></td>
+                    <td>
+                        <button class="toggle-mini <?= $syn['is_active'] ? 'active' : '' ?>"
+                                data-toggle-url="/admin/api.php?action=synonyms/toggle&id=<?= $syn['id'] ?>"
+                                data-csrf="<?= e($csrfToken) ?>"
+                                title="<?= $syn['is_active'] ? 'Active - click to disable' : 'Disabled - click to enable' ?>">
+                            <?= $syn['is_active'] ? '✓' : '✗' ?>
+                        </button>
+                    </td>
+                    <td class="actions">
+                        <a href="/admin/?page=synonyms&action=edit&id=<?= $syn['id'] ?>" class="btn btn-sm">Edit</a>
+                        <button class="btn btn-sm btn-danger" 
+                                data-delete 
+                                data-url="/admin/api.php?action=synonyms/delete&id=<?= $syn['id'] ?>"
+                                data-csrf="<?= e($csrfToken) ?>"
+                                data-confirm="Delete this synonym?">
+                            Delete
+                        </button>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    
+    <?php if ($pagination['total_pages'] > 1): ?>
+    <div class="pagination">
+        <?php if ($page > 1): ?>
+        <a href="/admin/?page=synonyms&p=<?= $page - 1 ?><?= $search ? '&search=' . urlencode($search) : '' ?>" class="btn btn-sm">← Prev</a>
+        <?php endif; ?>
+        
+        <span class="pagination-info">Page <?= $page ?> of <?= $pagination['total_pages'] ?></span>
+        
+        <?php if ($page < $pagination['total_pages']): ?>
+        <a href="/admin/?page=synonyms&p=<?= $page + 1 ?><?= $search ? '&search=' . urlencode($search) : '' ?>" class="btn btn-sm">Next →</a>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+    <?php endif; ?>
+    
+    <script>
+    // Toggle synonym active state
+    document.querySelectorAll('.toggle-mini[data-toggle-url]').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const url = this.dataset.toggleUrl;
+            const csrf = this.dataset.csrf;
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrf
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    this.classList.toggle('active');
+                    this.textContent = this.classList.contains('active') ? '✓' : '✗';
+                    this.title = this.classList.contains('active') ? 'Active - click to disable' : 'Disabled - click to enable';
+                }
+            } catch (e) {
+                console.error('Toggle failed:', e);
+            }
+        });
+    });
+    </script>
+    <?php
+}
+
+function renderSynonymAdd(): void
+{
+    $csrfToken = generateCsrfToken();
+    ?>
+    <div class="admin-header">
+        <h1>➕ Add Synonym</h1>
+        <div class="actions">
+            <a href="/admin/?page=synonyms" class="btn">← Back to List</a>
+        </div>
+    </div>
+    
+    <form class="admin-form" method="POST" data-ajax data-action="/admin/api.php?action=synonyms/create" data-redirect="/admin/?page=synonyms">
+        <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label for="canonical">Canonical Term *</label>
+                <input type="text" id="canonical" name="canonical" required maxlength="100" 
+                       placeholder="e.g., sofa" autocomplete="off">
+                <p class="form-help">The main/primary term that other words map to</p>
+            </div>
+            
+            <div class="form-group">
+                <label for="synonym">Synonym *</label>
+                <input type="text" id="synonym" name="synonym" required maxlength="100" 
+                       placeholder="e.g., couch" autocomplete="off">
+                <p class="form-help">Alternative term that should find the canonical term</p>
+            </div>
+        </div>
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label for="weight">Weight</label>
+                <input type="range" id="weight" name="weight" min="0.1" max="1.0" step="0.05" value="0.9"
+                       oninput="document.getElementById('weight_display').textContent = Math.round(this.value * 100) + '%'">
+                <p class="form-help">Relevance: <span id="weight_display">90%</span> (higher = more relevant)</p>
+            </div>
+            
+            <div class="form-group">
+                <label for="is_active">
+                    <input type="checkbox" id="is_active" name="is_active" checked>
+                    Active
+                </label>
+                <p class="form-help">Inactive synonyms won't be used in searches</p>
+            </div>
+        </div>
+        
+        <div class="admin-card" style="background: var(--bg-tertiary); margin-bottom: var(--spacing-md);">
+            <h4>💡 Synonym Tips</h4>
+            <ul style="margin: 0; padding-left: var(--spacing-md);">
+                <li><strong>Common misspellings:</strong> "couch" → "couch" (typos users make)</li>
+                <li><strong>Regional variations:</strong> "apartment" → "flat" (UK/US)</li>
+                <li><strong>Abbreviations:</strong> "television" → "tv"</li>
+                <li><strong>Related terms:</strong> "sofa" → "couch", "settee", "divan"</li>
+            </ul>
+        </div>
+        
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Create Synonym</button>
+            <a href="/admin/?page=synonyms" class="btn">Cancel</a>
+        </div>
+    </form>
+    <?php
+}
+
+function renderSynonymEdit(PDO $pdo, int $id): void
+{
+    $synonym = getSynonymById($pdo, $id);
+    if (!$synonym) {
+        echo '<div class="alert alert-error">Synonym not found</div>';
         return;
     }
     
-    $page = $pagination['page'];
-    $totalPages = $pagination['total_pages'];
+    $csrfToken = generateCsrfToken();
     ?>
-    <div class="pagination" style="margin-top: 1.5rem; display: flex; justify-content: center; gap: 0.5rem;">
-        <?php if ($page > 1): ?>
-            <a href="<?= $baseUrl ?>&p=<?= $page - 1 ?>" class="btn btn-sm">← Previous</a>
-        <?php endif; ?>
+    <div class="admin-header">
+        <h1>✏️ Edit Synonym</h1>
+        <div class="actions">
+            <a href="/admin/?page=synonyms" class="btn">← Back to List</a>
+        </div>
+    </div>
+    
+    <form class="admin-form" method="POST" data-ajax data-action="/admin/api.php?action=synonyms/update&id=<?= $id ?>" data-redirect="/admin/?page=synonyms">
+        <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
         
-        <span style="padding: 0.5rem 1rem; color: var(--text-secondary);">
-            Page <?= $page ?> of <?= $totalPages ?>
-        </span>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="canonical">Canonical Term *</label>
+                <input type="text" id="canonical" name="canonical" required maxlength="100" 
+                       value="<?= e($synonym['canonical']) ?>">
+            </div>
+            
+            <div class="form-group">
+                <label for="synonym">Synonym *</label>
+                <input type="text" id="synonym" name="synonym" required maxlength="100" 
+                       value="<?= e($synonym['synonym']) ?>">
+            </div>
+        </div>
         
-        <?php if ($page < $totalPages): ?>
-            <a href="<?= $baseUrl ?>&p=<?= $page + 1 ?>" class="btn btn-sm">Next →</a>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="weight">Weight</label>
+                <input type="range" id="weight" name="weight" min="0.1" max="1.0" step="0.05" 
+                       value="<?= $synonym['weight'] ?>"
+                       oninput="document.getElementById('weight_display').textContent = Math.round(this.value * 100) + '%'">
+                <p class="form-help">Relevance: <span id="weight_display"><?= round($synonym['weight'] * 100) ?>%</span></p>
+            </div>
+            
+            <div class="form-group">
+                <label for="is_active">
+                    <input type="checkbox" id="is_active" name="is_active" <?= $synonym['is_active'] ? 'checked' : '' ?>>
+                    Active
+                </label>
+            </div>
+        </div>
+        
+        <div class="admin-card" style="background: var(--bg-tertiary); margin-bottom: var(--spacing-md);">
+            <h4>📊 Usage Stats</h4>
+            <p style="margin: 0;">
+                <strong>Source:</strong> <?= e($synonym['source']) ?> &nbsp;|&nbsp;
+                <strong>Usage count:</strong> <?= number_format($synonym['usage_count']) ?> &nbsp;|&nbsp;
+                <strong>Created:</strong> <?= date('M j, Y', strtotime($synonym['created_at'])) ?>
+            </p>
+        </div>
+        
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Update Synonym</button>
+            <a href="/admin/?page=synonyms" class="btn">Cancel</a>
+        </div>
+    </form>
+    <?php
+}
+
+function renderSearchAnalytics(PDO $pdo): void
+{
+    $days = getQueryInt('days', 7);
+    
+    // Check if tables exist
+    $tablesExist = false;
+    try {
+        $stmt = $pdo->query("SHOW TABLES LIKE 'search_analytics'");
+        $tablesExist = $stmt->rowCount() > 0;
+    } catch (PDOException $e) {
+        $tablesExist = false;
+    }
+    ?>
+    <div class="admin-header">
+        <h1>📊 Search Analytics</h1>
+        <div class="actions">
+            <a href="/admin/?page=synonyms" class="btn">← Back to Synonyms</a>
+        </div>
+    </div>
+    
+    <?php if (!$tablesExist): ?>
+    <div class="alert alert-warning">
+        <strong>⚠️ Database Migration Required</strong><br>
+        The search analytics tables don't exist yet. Please run the migration:
+        <code>migrations/005_add_synonyms_and_search_log.sql</code>
+    </div>
+    <?php return; endif; ?>
+    
+    <div class="admin-toolbar">
+        <form method="GET" class="toolbar-filter">
+            <input type="hidden" name="page" value="synonyms">
+            <input type="hidden" name="action" value="analytics">
+            <label>Time period:</label>
+            <select name="days" onchange="this.form.submit()">
+                <option value="1" <?= $days === 1 ? 'selected' : '' ?>>Last 24 hours</option>
+                <option value="7" <?= $days === 7 ? 'selected' : '' ?>>Last 7 days</option>
+                <option value="30" <?= $days === 30 ? 'selected' : '' ?>>Last 30 days</option>
+                <option value="90" <?= $days === 90 ? 'selected' : '' ?>>Last 90 days</option>
+            </select>
+        </form>
+    </div>
+    
+    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: var(--spacing-lg);">
+        <?php
+        // Get total searches
+        $stmt = $pdo->prepare('
+            SELECT COALESCE(SUM(search_count), 0) as total 
+            FROM search_analytics 
+            WHERE date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+        ');
+        $stmt->execute([$days]);
+        $totalSearches = (int) $stmt->fetchColumn();
+        
+        // Get unique queries
+        $stmt = $pdo->prepare('
+            SELECT COUNT(DISTINCT query_normalized) 
+            FROM search_analytics 
+            WHERE date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+        ');
+        $stmt->execute([$days]);
+        $uniqueQueries = (int) $stmt->fetchColumn();
+        
+        // Get zero result searches
+        $stmt = $pdo->prepare('
+            SELECT COALESCE(SUM(zero_result_count), 0) 
+            FROM search_analytics 
+            WHERE date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+        ');
+        $stmt->execute([$days]);
+        $zeroResults = (int) $stmt->fetchColumn();
+        ?>
+        <div class="stat-card">
+            <div class="stat-icon">🔍</div>
+            <p class="stat-value"><?= number_format($totalSearches) ?></p>
+            <p class="stat-label">Total Searches</p>
+        </div>
+        
+        <div class="stat-card">
+            <div class="stat-icon">📝</div>
+            <p class="stat-value"><?= number_format($uniqueQueries) ?></p>
+            <p class="stat-label">Unique Queries</p>
+        </div>
+        
+        <div class="stat-card" style="<?= $zeroResults > 0 ? 'border-color: var(--warning);' : '' ?>">
+            <div class="stat-icon">⚠️</div>
+            <p class="stat-value"><?= number_format($zeroResults) ?></p>
+            <p class="stat-label">Zero Results</p>
+        </div>
+        
+        <div class="stat-card">
+            <div class="stat-icon">📈</div>
+            <p class="stat-value"><?= $totalSearches > 0 ? round(($zeroResults / $totalSearches) * 100, 1) : 0 ?>%</p>
+            <p class="stat-label">Zero Rate</p>
+        </div>
+    </div>
+    
+    <div class="analytics-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-lg);">
+        <div class="admin-card">
+            <h3>🔥 Popular Searches</h3>
+            <?php
+            $popular = getPopularSearches($pdo, $days, 15);
+            if (empty($popular)):
+            ?>
+            <p class="text-muted">No search data yet</p>
+            <?php else: ?>
+            <table class="data-table data-table-compact">
+                <thead>
+                    <tr>
+                        <th>Query</th>
+                        <th style="width: 80px">Searches</th>
+                        <th style="width: 80px">Avg Results</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($popular as $row): ?>
+                    <tr>
+                        <td><code><?= e($row['query_normalized']) ?></code></td>
+                        <td><?= number_format($row['total_searches']) ?></td>
+                        <td><?= $row['avg_results'] ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+        </div>
+        
+        <div class="admin-card">
+            <h3>⚠️ Zero Result Searches</h3>
+            <p class="text-muted" style="margin-bottom: var(--spacing-sm);">
+                These searches found nothing - consider adding synonyms!
+            </p>
+            <?php
+            $zeroResultSearches = getZeroResultSearches($pdo, $days, 15);
+            if (empty($zeroResultSearches)):
+            ?>
+            <p class="text-muted">No zero-result searches 🎉</p>
+            <?php else: ?>
+            <table class="data-table data-table-compact">
+                <thead>
+                    <tr>
+                        <th>Query</th>
+                        <th style="width: 80px">Searches</th>
+                        <th style="width: 100px">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($zeroResultSearches as $row): ?>
+                    <tr>
+                        <td><code><?= e($row['query_normalized']) ?></code></td>
+                        <td><?= number_format($row['zero_searches']) ?></td>
+                        <td>
+                            <a href="/admin/?page=synonyms&action=add&canonical=<?= urlencode($row['query_normalized']) ?>" 
+                               class="btn btn-sm btn-primary">+ Synonym</a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php
+}
+
+function renderSynonymAutoDiscovery(PDO $pdo): void
+{
+    $days = getQueryInt('days', 30);
+    $csrfToken = generateCsrfToken();
+    
+    // Check if tables exist
+    $tablesExist = false;
+    try {
+        $stmt = $pdo->query("SHOW TABLES LIKE 'search_analytics'");
+        $tablesExist = $stmt->rowCount() > 0;
+    } catch (PDOException $e) {
+        $tablesExist = false;
+    }
+    ?>
+    <div class="admin-header">
+        <h1>🔮 Synonym Auto-Discovery</h1>
+        <div class="actions">
+            <a href="/admin/?page=synonyms" class="btn">← Back to Synonyms</a>
+        </div>
+    </div>
+    
+    <?php if (!$tablesExist): ?>
+    <div class="alert alert-warning">
+        <strong>⚠️ Database Migration Required</strong><br>
+        The search analytics tables don't exist yet. Please run the migration:
+        <code>migrations/005_add_synonyms_and_search_log.sql</code>
+    </div>
+    <?php return; endif; ?>
+    
+    <div class="admin-toolbar">
+        <form method="GET" class="toolbar-filter">
+            <input type="hidden" name="page" value="synonyms">
+            <input type="hidden" name="action" value="discover">
+            <label>Analysis period:</label>
+            <select name="days" onchange="this.form.submit()">
+                <option value="7" <?= $days === 7 ? 'selected' : '' ?>>Last 7 days</option>
+                <option value="14" <?= $days === 14 ? 'selected' : '' ?>>Last 14 days</option>
+                <option value="30" <?= $days === 30 ? 'selected' : '' ?>>Last 30 days</option>
+                <option value="60" <?= $days === 60 ? 'selected' : '' ?>>Last 60 days</option>
+                <option value="90" <?= $days === 90 ? 'selected' : '' ?>>Last 90 days</option>
+            </select>
+        </form>
+        
+        <button class="btn btn-primary" id="autoCreateBtn" onclick="autoCreateSynonyms()">
+            🤖 Auto-Create All (Confidence ≥ 70%)
+        </button>
+    </div>
+    
+    <p class="text-muted" style="margin-bottom: var(--spacing-lg);">
+        The system analyzes search patterns to suggest new synonyms. These include:
+        <strong>fuzzy matches</strong> (typo corrections), 
+        <strong>session patterns</strong> (users searching A then B), and
+        <strong>zero-result queries</strong> that might need synonyms.
+    </p>
+    
+    <?php
+    // Get suggestions
+    $suggestions = SynonymAutoDiscovery::analyzeSearchPatterns($pdo, $days);
+    
+    // Group by type
+    $fuzzyMatches = array_filter($suggestions, fn($s) => $s['type'] === 'fuzzy_match');
+    $sessionPatterns = array_filter($suggestions, fn($s) => $s['type'] === 'session_pattern');
+    $zeroResults = array_filter($suggestions, fn($s) => $s['type'] === 'zero_result');
+    ?>
+    
+    <div class="grid-2" style="gap: var(--spacing-lg);">
+        <!-- Fuzzy Matches (Typo Corrections) -->
+        <div class="card">
+            <h3>✏️ Fuzzy Matches (Typo Corrections)</h3>
+            <p class="text-muted" style="margin-bottom: var(--spacing-sm);">
+                Terms that look like typos of existing synonyms
+            </p>
+            <?php if (empty($fuzzyMatches)): ?>
+            <p class="text-muted">No fuzzy match suggestions available</p>
+            <?php else: ?>
+            <table class="data-table data-table-compact">
+                <thead>
+                    <tr>
+                        <th>Typo</th>
+                        <th>Suggested Fix</th>
+                        <th>Score</th>
+                        <th>Searches</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($fuzzyMatches as $suggestion): ?>
+                    <?php $match = $suggestion['matches'][0] ?? null; ?>
+                    <?php if ($match): ?>
+                    <tr>
+                        <td><code><?= e($suggestion['term']) ?></code></td>
+                        <td><code><?= e($match['term']) ?></code></td>
+                        <td>
+                            <span class="badge <?= $match['score'] >= 0.8 ? 'badge-success' : ($match['score'] >= 0.6 ? 'badge-warning' : 'badge-secondary') ?>">
+                                <?= number_format($match['score'] * 100, 0) ?>%
+                            </span>
+                        </td>
+                        <td><?= number_format($suggestion['searches'] ?? 0) ?></td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" 
+                                    onclick="createSynonym('<?= e($match['term']) ?>', '<?= e($suggestion['term']) ?>', <?= $match['score'] ?>)">
+                                + Add
+                            </button>
+                        </td>
+                    </tr>
+                    <?php endif; ?>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+        </div>
+        
+        <!-- Session Patterns -->
+        <div class="card">
+            <h3>🔗 Session Patterns</h3>
+            <p class="text-muted" style="margin-bottom: var(--spacing-sm);">
+                Users who searched A often then searched B (refinement patterns)
+            </p>
+            <?php if (empty($sessionPatterns)): ?>
+            <p class="text-muted">No session pattern suggestions available</p>
+            <?php else: ?>
+            <table class="data-table data-table-compact">
+                <thead>
+                    <tr>
+                        <th>First Search</th>
+                        <th>Then Searched</th>
+                        <th>Confidence</th>
+                        <th>Occurrences</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($sessionPatterns as $suggestion): ?>
+                    <tr>
+                        <td><code><?= e($suggestion['term']) ?></code></td>
+                        <td><code><?= e($suggestion['related_term']) ?></code></td>
+                        <td>
+                            <span class="badge <?= $suggestion['confidence'] >= 0.7 ? 'badge-success' : ($suggestion['confidence'] >= 0.5 ? 'badge-warning' : 'badge-secondary') ?>">
+                                <?= number_format($suggestion['confidence'] * 100, 0) ?>%
+                            </span>
+                        </td>
+                        <td><?= number_format($suggestion['occurrences'] ?? 0) ?></td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" 
+                                    onclick="createSynonym('<?= e($suggestion['related_term']) ?>', '<?= e($suggestion['term']) ?>', <?= $suggestion['confidence'] ?>)">
+                                + Add
+                            </button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+        </div>
+    </div>
+    
+    <!-- Zero Result Searches -->
+    <div class="card" style="margin-top: var(--spacing-lg);">
+        <h3>⚠️ Zero Result Searches</h3>
+        <p class="text-muted" style="margin-bottom: var(--spacing-sm);">
+            Searches with no results - consider adding synonyms or checking if these are valid terms
+        </p>
+        <?php if (empty($zeroResults)): ?>
+        <p class="text-muted">No zero-result patterns to analyze 🎉</p>
+        <?php else: ?>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Query</th>
+                    <th>Searches</th>
+                    <th>Suggested Synonym</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($zeroResults as $suggestion): ?>
+                <tr>
+                    <td><code><?= e($suggestion['term']) ?></code></td>
+                    <td><?= number_format($suggestion['searches'] ?? 0) ?></td>
+                    <td>
+                        <?php if (!empty($suggestion['suggestion'])): ?>
+                        <code><?= e($suggestion['suggestion']) ?></code>
+                        <?php else: ?>
+                        <span class="text-muted">No suggestion</span>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <?php if (!empty($suggestion['suggestion'])): ?>
+                        <button class="btn btn-sm btn-primary" 
+                                onclick="createSynonym('<?= e($suggestion['suggestion']) ?>', '<?= e($suggestion['term']) ?>', 0.7)">
+                            + Add
+                        </button>
+                        <?php else: ?>
+                        <a href="/admin/?page=synonyms&action=add&synonym=<?= urlencode($suggestion['term']) ?>" 
+                           class="btn btn-sm">Manual Add</a>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
         <?php endif; ?>
     </div>
+    
+    <script>
+    const csrfToken = '<?= e($csrfToken) ?>';
+    
+    async function createSynonym(canonical, synonym, weight) {
+        try {
+            const response = await fetch('/admin/api.php?action=synonyms/create', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
+                },
+                body: JSON.stringify({
+                    canonical: canonical,
+                    synonym: synonym,
+                    weight: weight,
+                    source: 'analytics'
+                })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                window.GTAW.toast('Synonym created successfully', 'success');
+                // Remove the row or disable the button
+                event.target.closest('tr').style.opacity = '0.5';
+                event.target.disabled = true;
+                event.target.textContent = '✓ Added';
+            } else {
+                window.GTAW.toast(data.message || 'Failed to create synonym', 'error');
+            }
+        } catch (error) {
+            console.error('Error creating synonym:', error);
+            window.GTAW.toast('An error occurred', 'error');
+        }
+    }
+    
+    async function autoCreateSynonyms() {
+        if (!confirm('This will automatically create synonyms with confidence ≥ 70%. Continue?')) {
+            return;
+        }
+        
+        const btn = document.getElementById('autoCreateBtn');
+        btn.disabled = true;
+        btn.innerHTML = '⏳ Processing...';
+        
+        try {
+            const response = await fetch('/admin/api.php?action=synonyms/auto-create', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
+                },
+                body: JSON.stringify({
+                    days: <?= $days ?>,
+                    min_confidence: 0.7
+                })
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                window.GTAW.toast(data.message, 'success');
+                // Reload the page to refresh the list
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                window.GTAW.toast(data.message || 'Failed to auto-create synonyms', 'error');
+                btn.disabled = false;
+                btn.innerHTML = '🤖 Auto-Create All (Confidence ≥ 70%)';
+            }
+        } catch (error) {
+            console.error('Error auto-creating synonyms:', error);
+            window.GTAW.toast('An error occurred', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '🤖 Auto-Create All (Confidence ≥ 70%)';
+        }
+    }
+    </script>
     <?php
 }
 

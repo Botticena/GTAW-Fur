@@ -24,6 +24,7 @@ const Admin = {
         this.initDragAndDrop();
         this.initColorInputs();
         this.initDeleteButtons();
+        this.initCategoryTagSync();
         
         window.GTAW.tableSearch.init();
         window.GTAW.imagePreview.init();
@@ -896,6 +897,155 @@ const Admin = {
      */
     escapeHtml(text) {
         return window.GTAW ? window.GTAW.escapeHtml(text) : String(text ?? '');
+    },
+
+    /**
+     * Initialize category-tag synchronization for furniture forms
+     * When category selection changes, loads category-specific tags
+     */
+    initCategoryTagSync() {
+        const categoryCheckboxes = document.querySelectorAll('input[name="category_ids[]"]');
+        const tagsContainer = document.getElementById('tags-container');
+        
+        if (!categoryCheckboxes.length || !tagsContainer) return;
+        
+        // Store currently selected tag IDs
+        this.selectedTagIds = new Set();
+        document.querySelectorAll('input[name="tags[]"]:checked').forEach(cb => {
+            this.selectedTagIds.add(cb.value);
+        });
+        
+        // Watch for category changes
+        categoryCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                this.loadCategorySpecificTags();
+            });
+        });
+        
+        // Initial load if categories are selected
+        const selectedCategories = Array.from(categoryCheckboxes)
+            .filter(cb => cb.checked)
+            .map(cb => cb.value);
+            
+        if (selectedCategories.length > 0) {
+            this.loadCategorySpecificTags();
+        }
+    },
+
+    /**
+     * Load and render category-specific tags
+     */
+    async loadCategorySpecificTags() {
+        const categoryCheckboxes = document.querySelectorAll('input[name="category_ids[]"]:checked');
+        const tagsContainer = document.getElementById('tags-container');
+        const categorySpecificContainer = document.getElementById('category-specific-tags');
+        
+        if (!tagsContainer) return;
+        
+        const categoryIds = Array.from(categoryCheckboxes).map(cb => cb.value);
+        
+        // If no container for category-specific tags, create one
+        let specificContainer = categorySpecificContainer;
+        if (!specificContainer) {
+            specificContainer = document.createElement('div');
+            specificContainer.id = 'category-specific-tags';
+            specificContainer.className = 'category-specific-tags';
+            tagsContainer.appendChild(specificContainer);
+        }
+        
+        if (categoryIds.length === 0) {
+            specificContainer.innerHTML = '';
+            return;
+        }
+        
+        try {
+            const result = await this.publicApi('tags/for-categories', {
+                params: { category_ids: categoryIds.join(',') }
+            });
+            
+            if (!result.success) {
+                console.error('Failed to load category-specific tags');
+                return;
+            }
+            
+            const categorySpecificGroups = result.data?.category_specific?.groups || [];
+            
+            if (categorySpecificGroups.length === 0) {
+                specificContainer.innerHTML = '';
+                return;
+            }
+            
+            // Render category-specific tag groups
+            // Use same structure as regular tag groups for consistency
+            let html = '<h4>Category-Specific Tags</h4>';
+            
+            categorySpecificGroups.forEach(group => {
+                if (!group.tags || group.tags.length === 0) return;
+                
+                html += `
+                    <div class="tag-group-section" data-group-id="${group.id}">
+                        <h4>
+                            <span class="group-color-dot" style="background: ${this.escapeHtml(group.color)}"></span>
+                            ${this.escapeHtml(group.name)}
+                        </h4>
+                        <div class="checkbox-group">
+                `;
+                
+                group.tags.forEach(tag => {
+                    const isChecked = this.selectedTagIds.has(String(tag.id));
+                    html += `
+                        <label class="checkbox-item${isChecked ? ' checked' : ''}">
+                            <input type="checkbox" name="tags[]" value="${tag.id}"${isChecked ? ' checked' : ''}>
+                            <span>${this.escapeHtml(tag.name)}</span>
+                        </label>
+                    `;
+                });
+                
+                html += '</div></div>';
+            });
+            
+            specificContainer.innerHTML = html;
+            
+            // Re-bind checkbox styling events
+            specificContainer.querySelectorAll('.checkbox-item input').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    e.target.closest('.checkbox-item').classList.toggle('checked', e.target.checked);
+                    // Track selection
+                    if (e.target.checked) {
+                        this.selectedTagIds.add(e.target.value);
+                    } else {
+                        this.selectedTagIds.delete(e.target.value);
+                    }
+                });
+            });
+            
+        } catch (error) {
+            console.error('Error loading category-specific tags:', error);
+        }
+    },
+
+    /**
+     * Public API helper (for non-admin endpoints like tags/for-categories)
+     * Uses different method name to avoid conflict with admin API
+     */
+    async publicApi(action, options = {}) {
+        const url = new URL('/api.php', window.location.origin);
+        url.searchParams.set('action', action);
+
+        if (options.params) {
+            Object.entries(options.params).forEach(([key, value]) => {
+                if (value !== null && value !== undefined && value !== '') {
+                    url.searchParams.set(key, value);
+                }
+            });
+        }
+
+        const response = await fetch(url, {
+            method: 'GET',
+            credentials: 'same-origin'
+        });
+        
+        return response.json();
     }
 };
 

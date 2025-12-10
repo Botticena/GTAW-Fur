@@ -3,6 +3,7 @@
  * GTAW Furniture Catalog - OAuth Login Initiator
  * 
  * Redirects users to GTA World OAuth for authentication.
+ * Supports multiple communities (EN/FR) via query parameter.
  */
 
 declare(strict_types=1);
@@ -15,14 +16,39 @@ if (isLoggedIn()) {
     redirect('/');
 }
 
-// Get OAuth configuration
-$clientId = config('oauth.client_id');
-$redirectUri = config('oauth.redirect_uri');
-$authorizeUrl = config('oauth.authorize_url', 'https://ucp.gta.world/oauth/authorize');
+// Get community from query param or current setting
+$community = getQuery('community', getCurrentCommunity());
+if (!in_array($community, SUPPORTED_COMMUNITIES, true)) {
+    $community = DEFAULT_COMMUNITY;
+}
+
+// Check if community is enabled
+if (!isCommunityEnabled($community)) {
+    http_response_code(403);
+    exit(__('login.community_disabled'));
+}
+
+// Store community for callback
+$_SESSION['oauth_community'] = $community;
+
+// Update community preference
+setCurrentCommunity($community);
+
+// Get OAuth configuration for this community
+try {
+    $oauth = getOAuthConfig($community);
+} catch (RuntimeException $e) {
+    http_response_code(500);
+    exit(__('login.oauth_not_configured'));
+}
+
+$clientId = $oauth['client_id'] ?? '';
+$redirectUri = $oauth['redirect_uri'] ?? '';
+$authorizeUrl = $oauth['authorize_url'] ?? 'https://ucp.gta.world/oauth/authorize';
 
 if (empty($clientId) || empty($redirectUri)) {
     http_response_code(500);
-    exit('OAuth is not configured. Please contact the administrator.');
+    exit(__('login.oauth_not_configured'));
 }
 
 // Generate state token for CSRF protection
@@ -41,4 +67,3 @@ $authUrl = $authorizeUrl . '?' . http_build_query([
 // Redirect to GTA World OAuth
 header('Location: ' . $authUrl);
 exit;
-
